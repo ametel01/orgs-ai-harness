@@ -1810,46 +1810,33 @@ class RepoOnboardingTests(unittest.TestCase):
         env["PYTHONPATH"] = str(Path.cwd() / "src")
         return env
 
+    def run_cli(self, cwd: Path, *args: str) -> subprocess.CompletedProcess[str]:
+        return subprocess.run(
+            [sys.executable, "-m", "orgs_ai_harness", *args],
+            cwd=cwd,
+            env=self.cli_env(),
+            text=True,
+            capture_output=True,
+            check=False,
+        )
+
     def test_cli_onboard_scan_only_writes_summary_unknowns_and_manifest(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
             tmp_path = Path(tmp)
             create_basic_fixture_repo(tmp_path)
             init_org_pack(tmp_path, "acme")
 
-            add_result = subprocess.run(
-                [
-                    sys.executable,
-                    "-m",
-                    "orgs_ai_harness",
-                    "repo",
-                    "add",
-                    "fixture-repo",
-                    "--purpose",
-                    "Core API service",
-                ],
-                cwd=tmp,
-                env=self.cli_env(),
-                text=True,
-                capture_output=True,
-                check=False,
+            add_result = self.run_cli(
+                tmp_path,
+                "repo",
+                "add",
+                "fixture-repo",
+                "--purpose",
+                "Core API service",
             )
             self.assertEqual(add_result.returncode, 0, add_result.stderr)
 
-            scan_result = subprocess.run(
-                [
-                    sys.executable,
-                    "-m",
-                    "orgs_ai_harness",
-                    "onboard",
-                    "fixture-repo",
-                    "--scan-only",
-                ],
-                cwd=tmp,
-                env=self.cli_env(),
-                text=True,
-                capture_output=True,
-                check=False,
-            )
+            scan_result = self.run_cli(tmp_path, "onboard", "fixture-repo", "--scan-only")
 
             self.assertEqual(scan_result.returncode, 0, scan_result.stderr)
             self.assertIn("Scanned repo fixture-repo", scan_result.stdout)
@@ -1864,17 +1851,105 @@ class RepoOnboardingTests(unittest.TestCase):
             self.assertIn("package.json", unknowns.read_text(encoding="utf-8"))
             self.assertIn("README.md", manifest.read_text(encoding="utf-8"))
 
-            validate_result = subprocess.run(
-                [sys.executable, "-m", "orgs_ai_harness", "validate", "fixture-repo"],
-                cwd=tmp,
-                env=self.cli_env(),
-                text=True,
-                capture_output=True,
-                check=False,
-            )
+            validate_result = self.run_cli(tmp_path, "validate", "fixture-repo")
 
             self.assertEqual(validate_result.returncode, 0, validate_result.stderr)
             self.assertIn("Validation passed for fixture-repo", validate_result.stdout)
+
+    def test_cli_onboard_requires_scan_only_without_artifact_mutation(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            tmp_path = Path(tmp)
+            create_basic_fixture_repo(tmp_path)
+            init_org_pack(tmp_path, "acme")
+            self.assertEqual(self.run_cli(tmp_path, "repo", "add", "fixture-repo").returncode, 0)
+
+            scan_result = self.run_cli(tmp_path, "onboard", "fixture-repo")
+
+            self.assertNotEqual(scan_result.returncode, 0)
+            self.assertIn("requires --scan-only", scan_result.stderr)
+            self.assertFalse((tmp_path / DEFAULT_PACK_DIR / "repos" / "fixture-repo").exists())
+
+    def test_cli_onboard_rejects_unknown_repo_without_artifact_mutation(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            tmp_path = Path(tmp)
+            init_org_pack(tmp_path, "acme")
+
+            scan_result = self.run_cli(tmp_path, "onboard", "missing-repo", "--scan-only")
+
+            self.assertNotEqual(scan_result.returncode, 0)
+            self.assertIn("repo id is not registered: missing-repo", scan_result.stderr)
+            self.assertFalse((tmp_path / DEFAULT_PACK_DIR / "repos" / "missing-repo").exists())
+
+    def test_cli_onboard_rejects_remote_only_repo_with_path_guidance(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            tmp_path = Path(tmp)
+            init_org_pack(tmp_path, "acme")
+            add_result = self.run_cli(tmp_path, "repo", "add", "https://github.com/acme/web-app.git")
+            self.assertEqual(add_result.returncode, 0, add_result.stderr)
+
+            scan_result = self.run_cli(tmp_path, "onboard", "web-app", "--scan-only")
+
+            self.assertNotEqual(scan_result.returncode, 0)
+            self.assertIn("has no local path", scan_result.stderr)
+            self.assertIn("repo discover --clone", scan_result.stderr)
+            self.assertIn("repo set-path", scan_result.stderr)
+            self.assertFalse((tmp_path / DEFAULT_PACK_DIR / "repos" / "web-app").exists())
+
+    def test_cli_onboard_rejects_deactivated_and_external_repos(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            tmp_path = Path(tmp)
+            create_basic_fixture_repo(tmp_path, "api-service")
+            create_basic_fixture_repo(tmp_path, "vendor-sdk")
+            init_org_pack(tmp_path, "acme")
+            self.assertEqual(self.run_cli(tmp_path, "repo", "add", "api-service").returncode, 0)
+            self.assertEqual(self.run_cli(tmp_path, "repo", "add", "vendor-sdk", "--external").returncode, 0)
+            self.assertEqual(
+                self.run_cli(tmp_path, "repo", "deactivate", "api-service", "--reason", "Temporarily excluded").returncode,
+                0,
+            )
+
+            deactivated_result = self.run_cli(tmp_path, "onboard", "api-service", "--scan-only")
+            external_result = self.run_cli(tmp_path, "onboard", "vendor-sdk", "--scan-only")
+
+            self.assertNotEqual(deactivated_result.returncode, 0)
+            self.assertIn("not active selected coverage", deactivated_result.stderr)
+            self.assertNotEqual(external_result.returncode, 0)
+            self.assertIn("external dependency reference", external_result.stderr)
+            self.assertFalse((tmp_path / DEFAULT_PACK_DIR / "repos" / "api-service").exists())
+            self.assertFalse((tmp_path / DEFAULT_PACK_DIR / "repos" / "vendor-sdk").exists())
+
+    def test_cli_onboard_rejects_missing_local_path_with_repair_guidance(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            tmp_path = Path(tmp)
+            repo_path = create_basic_fixture_repo(tmp_path)
+            init_org_pack(tmp_path, "acme")
+            self.assertEqual(self.run_cli(tmp_path, "repo", "add", "fixture-repo").returncode, 0)
+            for child in repo_path.iterdir():
+                child.unlink()
+            repo_path.rmdir()
+
+            scan_result = self.run_cli(tmp_path, "onboard", "fixture-repo", "--scan-only")
+
+            self.assertNotEqual(scan_result.returncode, 0)
+            self.assertIn("repo path does not exist", scan_result.stderr)
+            self.assertIn("repo set-path", scan_result.stderr)
+            self.assertFalse((tmp_path / DEFAULT_PACK_DIR / "repos" / "fixture-repo").exists())
+
+    def test_cli_onboard_rejects_batch_repo_id_without_artifact_mutation(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            tmp_path = Path(tmp)
+            create_basic_fixture_repo(tmp_path, "api-service")
+            create_basic_fixture_repo(tmp_path, "web-app")
+            init_org_pack(tmp_path, "acme")
+            self.assertEqual(self.run_cli(tmp_path, "repo", "add", "api-service").returncode, 0)
+            self.assertEqual(self.run_cli(tmp_path, "repo", "add", "web-app").returncode, 0)
+
+            scan_result = self.run_cli(tmp_path, "onboard", "api-service,web-app", "--scan-only")
+
+            self.assertNotEqual(scan_result.returncode, 0)
+            self.assertIn("repo id is not registered: api-service,web-app", scan_result.stderr)
+            self.assertFalse((tmp_path / DEFAULT_PACK_DIR / "repos" / "api-service").exists())
+            self.assertFalse((tmp_path / DEFAULT_PACK_DIR / "repos" / "web-app").exists())
 
 
 if __name__ == "__main__":

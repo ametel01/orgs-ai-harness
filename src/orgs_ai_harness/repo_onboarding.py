@@ -80,11 +80,14 @@ def _find_repo(root: Path, repo_id: str) -> RepoEntry:
 
     for entry in load_repo_entries(root / "harness.yml"):
         if entry.id == normalized_repo_id:
+            if entry.coverage_status == "external" or entry.external:
+                raise RepoOnboardingError(f"repo is an external dependency reference, not selected coverage: {normalized_repo_id}")
             if entry.coverage_status != "selected" or not entry.active:
                 raise RepoOnboardingError(f"repo is not active selected coverage: {normalized_repo_id}")
             if entry.local_path is None:
                 raise RepoOnboardingError(
-                    f"repo {normalized_repo_id} has no local path; clone it or run 'harness repo set-path'"
+                    f"repo {normalized_repo_id} has no local path; run 'harness repo discover --clone' "
+                    "or 'harness repo set-path'"
                 )
             return entry
 
@@ -95,9 +98,9 @@ def _resolve_repo_path(root: Path, entry: RepoEntry) -> Path:
     assert entry.local_path is not None
     repo_path = (root / entry.local_path).resolve()
     if not repo_path.exists():
-        raise RepoOnboardingError(f"repo path does not exist: {repo_path}")
+        raise RepoOnboardingError(f"repo path does not exist: {repo_path}; repair it with 'harness repo set-path'")
     if not repo_path.is_dir():
-        raise RepoOnboardingError(f"repo path is not a directory: {repo_path}")
+        raise RepoOnboardingError(f"repo path is not a directory: {repo_path}; repair it with 'harness repo set-path'")
     return repo_path
 
 
