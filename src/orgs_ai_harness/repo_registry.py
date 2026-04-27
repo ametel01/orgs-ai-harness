@@ -174,6 +174,38 @@ def deactivate_repo(root: Path, repo_id: str, reason: str) -> RepoEntry:
     return updated_entry
 
 
+def remove_repo(root: Path, repo_id: str, reason: str, *, force: bool = False) -> RepoEntry:
+    """Remove a registry entry without touching repository contents."""
+
+    normalized_repo_id = repo_id.strip()
+    if not normalized_repo_id:
+        raise RepoRegistryError("repo id cannot be empty")
+
+    normalized_reason = reason.strip()
+    if not normalized_reason:
+        raise RepoRegistryError("removal reason cannot be empty")
+
+    root = root.resolve()
+    entries = load_repo_entries(root / "harness.yml")
+    remaining_entries: list[RepoEntry] = []
+    removed_entry: RepoEntry | None = None
+    for entry in entries:
+        if entry.id == normalized_repo_id:
+            removed_entry = entry
+            continue
+        remaining_entries.append(entry)
+
+    if removed_entry is None:
+        raise RepoRegistryError(f"repo id is not registered: {normalized_repo_id}")
+    if removed_entry.pack_ref is not None and not force:
+        raise RepoRegistryError(
+            f"repo {normalized_repo_id} has onboarding metadata and requires --force to remove"
+        )
+
+    save_repo_entries(root / "harness.yml", tuple(remaining_entries))
+    return removed_entry
+
+
 def save_repo_entries(config_path: Path, entries: tuple[RepoEntry, ...]) -> None:
     config = load_harness_config(config_path)
     save_harness_config(config_path, replace_config_block(config, render_repo_block(entries)))

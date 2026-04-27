@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from dataclasses import replace
 import os
 import subprocess
 import sys
@@ -23,6 +24,8 @@ from orgs_ai_harness.repo_registry import (
     derive_repo_id_from_path,
     derive_repo_id_from_url,
     load_repo_entries,
+    remove_repo,
+    save_repo_entries,
     set_repo_path,
 )
 from orgs_ai_harness.validation import validate_org_pack
@@ -938,6 +941,124 @@ class RepoRegistryTests(unittest.TestCase):
             self.assertIn("web-app", list_result.stdout)
             self.assertIn("active=false", list_result.stdout)
             self.assertIn("status=deactivated", list_result.stdout)
+
+            validate_result = subprocess.run(
+                [sys.executable, "-m", "orgs_ai_harness", "validate"],
+                cwd=tmp,
+                env=self.cli_env(),
+                text=True,
+                capture_output=True,
+                check=False,
+            )
+            self.assertEqual(validate_result.returncode, 0, validate_result.stderr)
+
+    def test_remove_repo_deletes_only_registry_entry_and_preserves_local_contents(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            tmp_path = Path(tmp)
+            repo_path = tmp_path / "api-service"
+            repo_path.mkdir()
+            marker = repo_path / "README.md"
+            marker.write_text("keep me\n", encoding="utf-8")
+            root = init_org_pack(tmp_path, "acme")
+            add_repo(root, tmp_path, "api-service")
+
+            removed = remove_repo(root, "api-service", "Registered by mistake")
+
+            self.assertEqual(removed.id, "api-service")
+            self.assertEqual(load_repo_entries(root / "harness.yml"), ())
+            self.assertTrue(repo_path.is_dir())
+            self.assertEqual(marker.read_text(encoding="utf-8"), "keep me\n")
+            self.assertTrue(validate_org_pack(root).ok)
+
+    def test_remove_repo_requires_reason_without_mutating_registry(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            tmp_path = Path(tmp)
+            (tmp_path / "api-service").mkdir()
+            root = init_org_pack(tmp_path, "acme")
+            add_repo(root, tmp_path, "api-service")
+            config_path = root / "harness.yml"
+            before = config_path.read_bytes()
+
+            with self.assertRaises(RepoRegistryError) as raised:
+                remove_repo(root, "api-service", " ")
+
+            self.assertIn("removal reason cannot be empty", str(raised.exception))
+            self.assertEqual(config_path.read_bytes(), before)
+
+    def test_remove_repo_rejects_protected_entry_without_force(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            tmp_path = Path(tmp)
+            (tmp_path / "api-service").mkdir()
+            root = init_org_pack(tmp_path, "acme")
+            added = add_repo(root, tmp_path, "api-service")
+            save_repo_entries(root / "harness.yml", (replace(added, pack_ref="repos/api-service/pack.yml"),))
+            config_path = root / "harness.yml"
+            before = config_path.read_bytes()
+
+            with self.assertRaises(RepoRegistryError) as raised:
+                remove_repo(root, "api-service", "Registered by mistake")
+
+            self.assertIn("requires --force to remove", str(raised.exception))
+            self.assertEqual(config_path.read_bytes(), before)
+
+            removed = remove_repo(root, "api-service", "Registered by mistake", force=True)
+
+            self.assertEqual(removed.pack_ref, "repos/api-service/pack.yml")
+            self.assertEqual(load_repo_entries(root / "harness.yml"), ())
+
+    def test_cli_repo_remove_lists_empty_registry_and_validates(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            init_org_pack(Path(tmp), "acme")
+
+            add_result = subprocess.run(
+                [
+                    sys.executable,
+                    "-m",
+                    "orgs_ai_harness",
+                    "repo",
+                    "add",
+                    "git@github.com:acme/web-app.git",
+                    "--owner",
+                    "product-engineering",
+                ],
+                cwd=tmp,
+                env=self.cli_env(),
+                text=True,
+                capture_output=True,
+                check=False,
+            )
+            self.assertEqual(add_result.returncode, 0, add_result.stderr)
+
+            remove_result = subprocess.run(
+                [
+                    sys.executable,
+                    "-m",
+                    "orgs_ai_harness",
+                    "repo",
+                    "remove",
+                    "web-app",
+                    "--reason",
+                    "Registered by mistake",
+                ],
+                cwd=tmp,
+                env=self.cli_env(),
+                text=True,
+                capture_output=True,
+                check=False,
+            )
+            self.assertEqual(remove_result.returncode, 0, remove_result.stderr)
+            self.assertIn("Removed repo web-app from registry: Registered by mistake", remove_result.stdout)
+
+            list_result = subprocess.run(
+                [sys.executable, "-m", "orgs_ai_harness", "repo", "list"],
+                cwd=tmp,
+                env=self.cli_env(),
+                text=True,
+                capture_output=True,
+                check=False,
+            )
+            self.assertEqual(list_result.returncode, 0, list_result.stderr)
+            self.assertIn("No repositories registered.", list_result.stdout)
 
             validate_result = subprocess.run(
                 [sys.executable, "-m", "orgs_ai_harness", "validate"],

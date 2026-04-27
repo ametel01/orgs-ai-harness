@@ -18,6 +18,7 @@ from orgs_ai_harness.repo_registry import (
     add_repo,
     deactivate_repo,
     load_repo_entries,
+    remove_repo,
     set_repo_path,
 )
 from orgs_ai_harness.validation import validate_org_pack
@@ -47,6 +48,10 @@ def build_parser() -> argparse.ArgumentParser:
     repo_deactivate = repo_subparsers.add_parser("deactivate", help="Deactivate a registered repository")
     repo_deactivate.add_argument("repo_id", help="Registered repo id")
     repo_deactivate.add_argument("--reason", required=True, help="Reason for deactivation")
+    repo_remove = repo_subparsers.add_parser("remove", help="Remove a repository registry entry")
+    repo_remove.add_argument("repo_id", help="Registered repo id")
+    repo_remove.add_argument("--reason", required=True, help="Reason for removal")
+    repo_remove.add_argument("--force", action="store_true", help="Remove even when onboarding metadata exists")
     repo_subparsers.add_parser("list", help="List registered repositories")
 
     subparsers.add_parser("validate", help="Validate the org skill pack")
@@ -114,6 +119,11 @@ def main(argv: list[str] | None = None) -> int:
             if args.repo_command == "deactivate":
                 entry = deactivate_repo(root, args.repo_id, args.reason)
                 print(f"Deactivated repo {entry.id}: {entry.deactivation_reason}")
+                return 0
+
+            if args.repo_command == "remove":
+                entry = remove_repo(root, args.repo_id, args.reason, force=args.force)
+                print(f"Removed repo {entry.id} from registry: {args.reason.strip()}")
                 return 0
 
             if args.repo_command == "list":
