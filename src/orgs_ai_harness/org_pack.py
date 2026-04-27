@@ -11,6 +11,13 @@ class OrgPackError(Exception):
 
 DEFAULT_PACK_DIR = "org-agent-skills"
 DEFAULT_SKILLS_VERSION = 1
+PROTECTED_INIT_PATHS = (
+    "harness.yml",
+    "org",
+    "repos",
+    "proposals",
+    "trace-summaries",
+)
 
 
 def resolve_default_root(cwd: Path) -> Path:
@@ -40,6 +47,7 @@ def init_org_pack(cwd: Path, org_name: str) -> Path:
     """Create a minimal org skill pack skeleton."""
 
     root = default_init_root(cwd)
+    _ensure_can_initialize(root)
     root.mkdir(parents=True, exist_ok=True)
 
     (root / "org" / "skills").mkdir(parents=True, exist_ok=True)
@@ -50,6 +58,20 @@ def init_org_pack(cwd: Path, org_name: str) -> Path:
     (root / "harness.yml").write_text(render_harness_config(org_name), encoding="utf-8")
 
     return root
+
+
+def _ensure_can_initialize(root: Path) -> None:
+    existing = [relative for relative in PROTECTED_INIT_PATHS if (root / relative).exists()]
+    if not existing:
+        return
+
+    existing_list = ", ".join(existing)
+    raise OrgPackError(
+        "refusing to initialize over existing org pack artifacts "
+        f"at {root}: {existing_list}. "
+        "Use 'harness org init --repo <path>' to attach an existing pack, "
+        "repair the directory manually, or run init from a different directory."
+    )
 
 
 def render_harness_config(org_name: str) -> str:
@@ -71,4 +93,3 @@ def render_harness_config(org_name: str) -> str:
         "  regexes: []\n"
         "command_permissions: []\n"
     )
-
