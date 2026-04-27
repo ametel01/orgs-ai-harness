@@ -7,6 +7,7 @@ import tempfile
 import unittest
 from pathlib import Path
 
+from orgs_ai_harness.config import load_harness_config, parse_harness_config, save_harness_config
 from orgs_ai_harness.org_pack import (
     ATTACHMENT_FILE,
     DEFAULT_PACK_DIR,
@@ -150,6 +151,107 @@ class OrgPackFoundationTests(unittest.TestCase):
             self.assertTrue(any("org.name is invalid" in error for error in result.errors))
             self.assertTrue(any("org.skills_version must be 1" in error for error in result.errors))
             self.assertTrue(any("providers" in error for error in result.errors))
+
+    def test_fresh_config_contains_required_placeholders(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            root = init_org_pack(Path(tmp), "acme")
+            config_text = (root / "harness.yml").read_text(encoding="utf-8")
+
+            self.assertIn("org:\n", config_text)
+            self.assertIn("  name: acme\n", config_text)
+            self.assertIn("  skills_version: 1\n", config_text)
+            self.assertIn("providers: []\n", config_text)
+            self.assertIn("repos: []\n", config_text)
+            self.assertIn("redaction:\n", config_text)
+            self.assertIn("  globs: []\n", config_text)
+            self.assertIn("  regexes: []\n", config_text)
+            self.assertIn("command_permissions: []\n", config_text)
+
+    def test_config_round_trip_preserves_supported_and_future_sections(self) -> None:
+        config_text = (
+            "org:\n"
+            "  name: acme\n"
+            "  skills_version: 1\n"
+            "  future_org_field: keep-me\n"
+            "\n"
+            "providers:\n"
+            "  - name: github-gh\n"
+            "    enabled: false\n"
+            "repos:\n"
+            "  - id: api-service\n"
+            "    active: true\n"
+            "redaction:\n"
+            "  globs:\n"
+            "    - '*.pem'\n"
+            "  regexes:\n"
+            "    - 'token_[A-Za-z0-9]+'\n"
+            "command_permissions:\n"
+            "  - prefix: git status\n"
+            "future_section:\n"
+            "  enabled: true\n"
+        )
+
+        config = parse_harness_config(config_text)
+        serialized = config.to_text()
+
+        self.assertIn("future_org_field: keep-me", serialized)
+        self.assertIn("providers:\n  - name: github-gh", serialized)
+        self.assertIn("repos:\n  - id: api-service", serialized)
+        self.assertIn("redaction:\n  globs:\n    - '*.pem'", serialized)
+        self.assertIn("command_permissions:\n  - prefix: git status", serialized)
+        self.assertIn("future_section:\n  enabled: true", serialized)
+
+    def test_config_round_trip_validates_after_write(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            root = init_org_pack(Path(tmp), "acme")
+            config_path = root / "harness.yml"
+            config_path.write_text(
+                "org:\n"
+                "  name: acme\n"
+                "  skills_version: 1\n"
+                "\n"
+                "providers:\n"
+                "  - name: github-gh\n"
+                "repos: []\n"
+                "redaction:\n"
+                "  globs:\n"
+                "    - '*.pem'\n"
+                "  regexes: []\n"
+                "command_permissions:\n"
+                "  - prefix: git status\n",
+                encoding="utf-8",
+            )
+
+            config = load_harness_config(config_path)
+            save_harness_config(config_path, config)
+
+            self.assertTrue(validate_org_pack(root).ok)
+            rewritten = config_path.read_text(encoding="utf-8")
+            self.assertIn("providers:\n  - name: github-gh", rewritten)
+            self.assertIn("command_permissions:\n  - prefix: git status", rewritten)
+
+    def test_invalid_config_still_fails_validation_after_round_trip_support(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            root = init_org_pack(Path(tmp), "acme")
+            (root / "harness.yml").write_text(
+                "org:\n"
+                "  name: bad/name\n"
+                "  skills_version: 1\n"
+                "\n"
+                "providers:\n"
+                "  - name: github-gh\n"
+                "repos: []\n"
+                "redaction:\n"
+                "  globs: []\n"
+                "  regexes: []\n"
+                "command_permissions: []\n",
+                encoding="utf-8",
+            )
+
+            result = validate_org_pack(root)
+
+            self.assertFalse(result.ok)
+            self.assertTrue(any("org.name is invalid" in error for error in result.errors))
 
     def test_cli_init_then_validate(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:

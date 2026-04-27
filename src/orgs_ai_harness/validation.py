@@ -6,6 +6,8 @@ from dataclasses import dataclass
 from pathlib import Path
 import re
 
+from orgs_ai_harness.config import block_has_field, read_block_scalar, split_top_level_blocks
+
 
 @dataclass(frozen=True)
 class ValidationResult:
@@ -64,12 +66,13 @@ def validate_org_pack(root: Path) -> ValidationResult:
 
 def _validate_minimum_config(config_text: str) -> list[str]:
     errors: list[str] = []
-    lines = config_text.splitlines()
+    blocks = {block.key: block for block in split_top_level_blocks(config_text)}
+    org_block = blocks.get("org")
 
-    if "org:" not in lines:
+    if org_block is None:
         errors.append("harness.yml missing required field: org (add top-level 'org:' mapping)")
 
-    name = _read_scalar(lines, "  name:")
+    name = read_block_scalar(org_block, "name") if org_block is not None else None
     if name is None or not name.strip():
         errors.append("harness.yml missing required field: org.name (set org.name to a non-empty name)")
     elif not _is_valid_org_name(name):
@@ -78,30 +81,23 @@ def _validate_minimum_config(config_text: str) -> list[str]:
             "(use letters, numbers, dots, underscores, or hyphens; do not use slashes)"
         )
 
-    skills_version = _read_scalar(lines, "  skills_version:")
+    skills_version = read_block_scalar(org_block, "skills_version") if org_block is not None else None
     if skills_version != "1":
         errors.append("harness.yml field org.skills_version must be 1 (set 'skills_version: 1')")
 
-    for field in ("providers: []", "repos: []", "command_permissions: []"):
-        if field not in lines:
-            field_name = field.removesuffix(": []")
-            errors.append(f"harness.yml missing required field: {field_name} (add '{field}')")
+    for field_name in ("providers", "repos", "command_permissions"):
+        if field_name not in blocks:
+            errors.append(f"harness.yml missing required field: {field_name} (add '{field_name}: []')")
 
-    if "redaction:" not in lines:
+    redaction_block = blocks.get("redaction")
+    if redaction_block is None:
         errors.append("harness.yml missing required field: redaction (add top-level 'redaction:' mapping)")
-    if "  globs: []" not in lines:
+    if redaction_block is None or not block_has_field(redaction_block, "globs"):
         errors.append("harness.yml missing required field: redaction.globs (add '  globs: []')")
-    if "  regexes: []" not in lines:
+    if redaction_block is None or not block_has_field(redaction_block, "regexes"):
         errors.append("harness.yml missing required field: redaction.regexes (add '  regexes: []')")
 
     return errors
-
-
-def _read_scalar(lines: list[str], prefix: str) -> str | None:
-    for line in lines:
-        if line.startswith(prefix):
-            return line.removeprefix(prefix).strip()
-    return None
 
 
 def _is_valid_org_name(name: str) -> bool:

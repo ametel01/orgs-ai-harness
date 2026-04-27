@@ -4,6 +4,8 @@ from __future__ import annotations
 
 from pathlib import Path
 
+from orgs_ai_harness.config import render_default_harness_config
+
 
 class OrgPackError(Exception):
     """Raised when org pack operations cannot be completed."""
@@ -139,15 +141,4 @@ def render_harness_config(org_name: str) -> str:
     if not normalized_name:
         raise OrgPackError("org name cannot be empty")
 
-    return (
-        "org:\n"
-        f"  name: {normalized_name}\n"
-        f"  skills_version: {DEFAULT_SKILLS_VERSION}\n"
-        "\n"
-        "providers: []\n"
-        "repos: []\n"
-        "redaction:\n"
-        "  globs: []\n"
-        "  regexes: []\n"
-        "command_permissions: []\n"
-    )
+    return render_default_harness_config(normalized_name)
