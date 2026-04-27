@@ -660,6 +660,95 @@ class RepoRegistryTests(unittest.TestCase):
             self.assertNotEqual(discover_result.returncode, 0)
             self.assertIn("only one of --github-org or --github-user", discover_result.stderr)
 
+    def test_cli_repo_discover_hides_archived_and_forks_by_default(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            tmp_path = Path(tmp)
+            init_org_pack(tmp_path, "acme")
+            payload = (
+                '[{"name":"active-service","owner":{"login":"acme"},'
+                '"url":"https://github.com/acme/active-service",'
+                '"defaultBranchRef":{"name":"main"},"visibility":"PRIVATE",'
+                '"isArchived":false,"isFork":false,"description":null},'
+                '{"name":"old-tool","owner":{"login":"acme"},'
+                '"url":"https://github.com/acme/old-tool",'
+                '"defaultBranchRef":{"name":"main"},"visibility":"PRIVATE",'
+                '"isArchived":true,"isFork":false,"description":null},'
+                '{"name":"forked-sdk","owner":{"login":"acme"},'
+                '"url":"https://github.com/acme/forked-sdk",'
+                '"defaultBranchRef":{"name":"main"},"visibility":"PUBLIC",'
+                '"isArchived":false,"isFork":true,"description":null}]'
+            )
+            fake_bin = tmp_path / "fake-bin"
+            self.write_fake_gh(fake_bin, payload)
+
+            discover_result = subprocess.run(
+                [
+                    sys.executable,
+                    "-m",
+                    "orgs_ai_harness",
+                    "repo",
+                    "discover",
+                    "--github-org",
+                    "acme",
+                    "--select",
+                    "old-tool",
+                ],
+                cwd=tmp,
+                env=self.cli_env_with_fake_gh(fake_bin),
+                text=True,
+                capture_output=True,
+                check=False,
+            )
+
+            self.assertNotEqual(discover_result.returncode, 0)
+            self.assertIn("filtered out by default", discover_result.stderr)
+            root = tmp_path / DEFAULT_PACK_DIR
+            self.assertEqual(load_repo_entries(root / "harness.yml"), ())
+
+    def test_cli_repo_discover_include_flags_make_archived_and_forks_selectable(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            tmp_path = Path(tmp)
+            init_org_pack(tmp_path, "acme")
+            payload = (
+                '[{"name":"old-tool","owner":{"login":"acme"},'
+                '"url":"https://github.com/acme/old-tool",'
+                '"defaultBranchRef":{"name":"main"},"visibility":"PRIVATE",'
+                '"isArchived":true,"isFork":false,"description":null},'
+                '{"name":"forked-sdk","owner":{"login":"acme"},'
+                '"url":"https://github.com/acme/forked-sdk",'
+                '"defaultBranchRef":{"name":"main"},"visibility":"PUBLIC",'
+                '"isArchived":false,"isFork":true,"description":null}]'
+            )
+            fake_bin = tmp_path / "fake-bin"
+            self.write_fake_gh(fake_bin, payload)
+
+            discover_result = subprocess.run(
+                [
+                    sys.executable,
+                    "-m",
+                    "orgs_ai_harness",
+                    "repo",
+                    "discover",
+                    "--github-org",
+                    "acme",
+                    "--include-archived",
+                    "--include-forks",
+                    "--select",
+                    "old-tool,forked-sdk",
+                ],
+                cwd=tmp,
+                env=self.cli_env_with_fake_gh(fake_bin),
+                text=True,
+                capture_output=True,
+                check=False,
+            )
+
+            self.assertEqual(discover_result.returncode, 0, discover_result.stderr)
+            root = tmp_path / DEFAULT_PACK_DIR
+            entries = load_repo_entries(root / "harness.yml")
+            self.assertEqual([entry.id for entry in entries], ["old-tool", "forked-sdk"])
+            self.assertTrue(validate_org_pack(root).ok)
+
     def test_add_remote_ssh_url_writes_registry_entry_without_local_path(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
             root = init_org_pack(Path(tmp), "acme")

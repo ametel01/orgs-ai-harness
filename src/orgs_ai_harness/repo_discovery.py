@@ -51,9 +51,29 @@ def discover_github_user(user: str) -> tuple[DiscoveredRepo, ...]:
     return _run_gh_repo_list(target)
 
 
+def filter_discovered_repos(
+    discovered: tuple[DiscoveredRepo, ...],
+    *,
+    include_archived: bool = False,
+    include_forks: bool = False,
+) -> tuple[DiscoveredRepo, ...]:
+    """Apply default discovery filters before selection."""
+
+    filtered: list[DiscoveredRepo] = []
+    for repo in discovered:
+        if repo.archived and not include_archived:
+            continue
+        if repo.fork and not include_forks:
+            continue
+        filtered.append(repo)
+    return tuple(filtered)
+
+
 def select_discovered_repos(
     discovered: tuple[DiscoveredRepo, ...],
     selection_value: str,
+    *,
+    filtered_out: tuple[DiscoveredRepo, ...] = (),
 ) -> tuple[DiscoveredRepo, ...]:
     """Select discovered repos by comma-separated id or name."""
 
@@ -79,6 +99,14 @@ def select_discovered_repos(
             seen.add(repo.id)
 
     if missing:
+        filtered_keys = {repo.id for repo in filtered_out} | {repo.name for repo in filtered_out}
+        filtered_missing = [key for key in missing if key in filtered_keys]
+        if filtered_missing:
+            missing_list = ", ".join(filtered_missing)
+            raise RepoDiscoveryError(
+                "selected repo(s) were filtered out by default: "
+                f"{missing_list}. Use --include-archived or --include-forks when appropriate."
+            )
         missing_list = ", ".join(missing)
         raise RepoDiscoveryError(f"selected repo(s) not found in discovery results: {missing_list}")
 
