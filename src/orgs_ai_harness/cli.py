@@ -12,7 +12,13 @@ from orgs_ai_harness.org_pack import (
     init_org_pack,
     resolve_default_root,
 )
-from orgs_ai_harness.repo_registry import RepoEntry, RepoRegistryError, add_repo, load_repo_entries
+from orgs_ai_harness.repo_registry import (
+    RepoEntry,
+    RepoRegistryError,
+    add_repo,
+    load_repo_entries,
+    set_repo_path,
+)
 from orgs_ai_harness.validation import validate_org_pack
 
 
@@ -34,6 +40,9 @@ def build_parser() -> argparse.ArgumentParser:
     repo_add.add_argument("--purpose", help="Why this repository is covered")
     repo_add.add_argument("--owner", help="Owning team or person")
     repo_add.add_argument("--default-branch", default="main", help="Default branch name")
+    repo_set_path = repo_subparsers.add_parser("set-path", help="Repair a registered local repository path")
+    repo_set_path.add_argument("repo_id", help="Registered repo id")
+    repo_set_path.add_argument("path", help="New local repository path")
     repo_subparsers.add_parser("list", help="List registered repositories")
 
     subparsers.add_parser("validate", help="Validate the org skill pack")
@@ -91,6 +100,11 @@ def main(argv: list[str] | None = None) -> int:
                     default_branch=args.default_branch,
                 )
                 print(f"Registered repo {entry.id} at {_repo_location(entry)}")
+                return 0
+
+            if args.repo_command == "set-path":
+                entry = set_repo_path(root, Path.cwd(), args.repo_id, args.path)
+                print(f"Updated repo {entry.id} path to {entry.local_path}")
                 return 0
 
             if args.repo_command == "list":

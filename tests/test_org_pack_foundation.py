@@ -22,6 +22,7 @@ from orgs_ai_harness.repo_registry import (
     derive_repo_id_from_path,
     derive_repo_id_from_url,
     load_repo_entries,
+    set_repo_path,
 )
 from orgs_ai_harness.validation import validate_org_pack
 
@@ -688,6 +689,118 @@ class RepoRegistryTests(unittest.TestCase):
 
             self.assertFalse(result.ok)
             self.assertTrue(any("duplicate repo id: api-service" in error for error in result.errors))
+
+    def test_set_repo_path_updates_only_target_entry(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            tmp_path = Path(tmp)
+            (tmp_path / "api-service").mkdir()
+            (tmp_path / "moved-api-service").mkdir()
+            root = init_org_pack(tmp_path, "acme")
+            add_repo(root, tmp_path, "api-service", purpose="Core backend API and auth", owner="platform")
+            add_repo(root, tmp_path, "git@github.com:acme/web-app.git", owner="product-engineering")
+
+            updated = set_repo_path(root, tmp_path, "api-service", "moved-api-service")
+
+            self.assertEqual(updated.local_path, "../moved-api-service")
+            entries = load_repo_entries(root / "harness.yml")
+            api_entry = next(entry for entry in entries if entry.id == "api-service")
+            web_entry = next(entry for entry in entries if entry.id == "web-app")
+            self.assertEqual(api_entry.local_path, "../moved-api-service")
+            self.assertEqual(api_entry.purpose, "Core backend API and auth")
+            self.assertEqual(api_entry.owner, "platform")
+            self.assertEqual(api_entry.coverage_status, "selected")
+            self.assertEqual(web_entry.url, "git@github.com:acme/web-app.git")
+            self.assertIsNone(web_entry.local_path)
+            self.assertTrue(validate_org_pack(root).ok)
+
+    def test_set_repo_path_rejects_missing_path_without_mutating_registry(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            tmp_path = Path(tmp)
+            (tmp_path / "api-service").mkdir()
+            root = init_org_pack(tmp_path, "acme")
+            add_repo(root, tmp_path, "api-service")
+            config_path = root / "harness.yml"
+            before = config_path.read_bytes()
+
+            with self.assertRaises(RepoRegistryError) as raised:
+                set_repo_path(root, tmp_path, "api-service", "missing-api-service")
+
+            self.assertIn("repo path does not exist", str(raised.exception))
+            self.assertEqual(config_path.read_bytes(), before)
+
+    def test_set_repo_path_rejects_unknown_repo_id_without_mutating_registry(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            tmp_path = Path(tmp)
+            (tmp_path / "api-service").mkdir()
+            (tmp_path / "moved-api-service").mkdir()
+            root = init_org_pack(tmp_path, "acme")
+            add_repo(root, tmp_path, "api-service")
+            config_path = root / "harness.yml"
+            before = config_path.read_bytes()
+
+            with self.assertRaises(RepoRegistryError) as raised:
+                set_repo_path(root, tmp_path, "missing-service", "moved-api-service")
+
+            self.assertIn("repo id is not registered: missing-service", str(raised.exception))
+            self.assertEqual(config_path.read_bytes(), before)
+
+    def test_cli_repo_set_path_lists_repaired_path_and_validates(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            tmp_path = Path(tmp)
+            (tmp_path / "api-service").mkdir()
+            (tmp_path / "moved-api-service").mkdir()
+            init_org_pack(tmp_path, "acme")
+
+            add_result = subprocess.run(
+                [sys.executable, "-m", "orgs_ai_harness", "repo", "add", "api-service"],
+                cwd=tmp,
+                env=self.cli_env(),
+                text=True,
+                capture_output=True,
+                check=False,
+            )
+            self.assertEqual(add_result.returncode, 0, add_result.stderr)
+
+            set_path_result = subprocess.run(
+                [
+                    sys.executable,
+                    "-m",
+                    "orgs_ai_harness",
+                    "repo",
+                    "set-path",
+                    "api-service",
+                    "moved-api-service",
+                ],
+                cwd=tmp,
+                env=self.cli_env(),
+                text=True,
+                capture_output=True,
+                check=False,
+            )
+
+            self.assertEqual(set_path_result.returncode, 0, set_path_result.stderr)
+            self.assertIn("Updated repo api-service path to ../moved-api-service", set_path_result.stdout)
+
+            list_result = subprocess.run(
+                [sys.executable, "-m", "orgs_ai_harness", "repo", "list"],
+                cwd=tmp,
+                env=self.cli_env(),
+                text=True,
+                capture_output=True,
+                check=False,
+            )
+            self.assertEqual(list_result.returncode, 0, list_result.stderr)
+            self.assertIn("../moved-api-service", list_result.stdout)
+
+            validate_result = subprocess.run(
+                [sys.executable, "-m", "orgs_ai_harness", "validate"],
+                cwd=tmp,
+                env=self.cli_env(),
+                text=True,
+                capture_output=True,
+                check=False,
+            )
+            self.assertEqual(validate_result.returncode, 0, validate_result.stderr)
 
 
 if __name__ == "__main__":

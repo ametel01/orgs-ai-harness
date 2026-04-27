@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from pathlib import Path
 import json
 import os
@@ -100,6 +100,41 @@ def load_repo_entries(config_path: Path) -> tuple[RepoEntry, ...]:
     if repos_block is None:
         return ()
     return parse_repo_block(repos_block)
+
+
+def set_repo_path(root: Path, cwd: Path, repo_id: str, path_value: str) -> RepoEntry:
+    """Update the local path for one registered repo."""
+
+    normalized_repo_id = repo_id.strip()
+    if not normalized_repo_id:
+        raise RepoRegistryError("repo id cannot be empty")
+
+    raw_path = path_value.strip()
+    if not raw_path:
+        raise RepoRegistryError("repo path cannot be empty")
+
+    root = root.resolve()
+    repo_path = _resolve_user_path(cwd, raw_path)
+    if not repo_path.exists():
+        raise RepoRegistryError(f"repo path does not exist: {repo_path}")
+    if not repo_path.is_dir():
+        raise RepoRegistryError(f"repo path is not a directory: {repo_path}")
+
+    entries = load_repo_entries(root / "harness.yml")
+    updated_entries: list[RepoEntry] = []
+    updated_entry: RepoEntry | None = None
+    for entry in entries:
+        if entry.id == normalized_repo_id:
+            updated_entry = replace(entry, local_path=_relative_path(repo_path, root))
+            updated_entries.append(updated_entry)
+        else:
+            updated_entries.append(entry)
+
+    if updated_entry is None:
+        raise RepoRegistryError(f"repo id is not registered: {normalized_repo_id}")
+
+    save_repo_entries(root / "harness.yml", tuple(updated_entries))
+    return updated_entry
 
 
 def save_repo_entries(config_path: Path, entries: tuple[RepoEntry, ...]) -> None:
