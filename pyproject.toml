@@ -1,0 +1,13 @@
+[project]
+name = "orgs-ai-harness"
+version = "0.1.0"
+description = "CLI-first harness for generating and validating org agent skill packs."
+requires-python = ">=3.11"
+
+[project.scripts]
+harness = "orgs_ai_harness.cli:main"
+
+[build-system]
+requires = ["setuptools>=69"]
+build-backend = "setuptools.build_meta"
+
