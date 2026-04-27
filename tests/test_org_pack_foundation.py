@@ -436,6 +436,26 @@ class RepoRegistryTests(unittest.TestCase):
         env["PYTHONPATH"] = str(Path.cwd() / "src")
         return env
 
+    def cli_env_with_fake_gh(self, fake_bin: Path) -> dict[str, str]:
+        env = self.cli_env()
+        env["PATH"] = f"{fake_bin}{os.pathsep}{env['PATH']}"
+        return env
+
+    def write_fake_gh(self, fake_bin: Path, payload: str) -> None:
+        fake_bin.mkdir()
+        gh_path = fake_bin / "gh"
+        gh_path.write_text(
+            "#!/usr/bin/env python3\n"
+            "import sys\n"
+            f"payload = {payload!r}\n"
+            "if sys.argv[1:4] != ['repo', 'list', 'acme']:\n"
+            "    print('unexpected gh args: ' + ' '.join(sys.argv[1:]), file=sys.stderr)\n"
+            "    raise SystemExit(2)\n"
+            "print(payload)\n",
+            encoding="utf-8",
+        )
+        gh_path.chmod(0o755)
+
     def test_add_local_repo_writes_selected_registry_entry(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
             tmp_path = Path(tmp)
@@ -522,6 +542,53 @@ class RepoRegistryTests(unittest.TestCase):
 
             self.assertNotEqual(add_result.returncode, 0)
             self.assertIn("repo path does not exist", add_result.stderr)
+
+    def test_cli_repo_discover_org_registers_only_selected_repo(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            tmp_path = Path(tmp)
+            init_org_pack(tmp_path, "acme")
+            payload = (
+                '[{"name":"api-service","owner":{"login":"acme"},'
+                '"url":"https://github.com/acme/api-service",'
+                '"defaultBranchRef":{"name":"main"},"visibility":"PRIVATE",'
+                '"isArchived":false,"isFork":false,"description":"Core API"},'
+                '{"name":"web-app","owner":{"login":"acme"},'
+                '"url":"https://github.com/acme/web-app",'
+                '"defaultBranchRef":{"name":"main"},"visibility":"PUBLIC",'
+                '"isArchived":false,"isFork":false,"description":"Web app"}]'
+            )
+            fake_bin = tmp_path / "fake-bin"
+            self.write_fake_gh(fake_bin, payload)
+
+            discover_result = subprocess.run(
+                [
+                    sys.executable,
+                    "-m",
+                    "orgs_ai_harness",
+                    "repo",
+                    "discover",
+                    "--github-org",
+                    "acme",
+                    "--select",
+                    "api-service",
+                ],
+                cwd=tmp,
+                env=self.cli_env_with_fake_gh(fake_bin),
+                text=True,
+                capture_output=True,
+                check=False,
+            )
+
+            self.assertEqual(discover_result.returncode, 0, discover_result.stderr)
+            self.assertIn("Registered repo api-service", discover_result.stdout)
+            root = tmp_path / DEFAULT_PACK_DIR
+            entries = load_repo_entries(root / "harness.yml")
+            self.assertEqual(len(entries), 1)
+            self.assertEqual(entries[0].id, "api-service")
+            self.assertEqual(entries[0].owner, "acme")
+            self.assertEqual(entries[0].url, "https://github.com/acme/api-service")
+            self.assertEqual(entries[0].default_branch, "main")
+            self.assertTrue(validate_org_pack(root).ok)
 
     def test_add_remote_ssh_url_writes_registry_entry_without_local_path(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:

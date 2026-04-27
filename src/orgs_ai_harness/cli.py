@@ -21,6 +21,12 @@ from orgs_ai_harness.repo_registry import (
     remove_repo,
     set_repo_path,
 )
+from orgs_ai_harness.repo_discovery import (
+    RepoDiscoveryError,
+    discover_github_org,
+    register_discovered_repos,
+    select_discovered_repos,
+)
 from orgs_ai_harness.validation import validate_org_pack
 
 
@@ -43,6 +49,9 @@ def build_parser() -> argparse.ArgumentParser:
     repo_add.add_argument("--owner", help="Owning team or person")
     repo_add.add_argument("--default-branch", default="main", help="Default branch name")
     repo_add.add_argument("--external", action="store_true", help="Mark as an external dependency reference")
+    repo_discover = repo_subparsers.add_parser("discover", help="Discover repositories from a provider")
+    repo_discover.add_argument("--github-org", help="GitHub organization to discover with gh")
+    repo_discover.add_argument("--select", help="Comma-separated discovered repo ids or names to register")
     repo_set_path = repo_subparsers.add_parser("set-path", help="Repair a registered local repository path")
     repo_set_path.add_argument("repo_id", help="Registered repo id")
     repo_set_path.add_argument("path", help="New local repository path")
@@ -113,6 +122,18 @@ def main(argv: list[str] | None = None) -> int:
                 print(f"Registered repo {entry.id} at {_repo_location(entry)}")
                 return 0
 
+            if args.repo_command == "discover":
+                if args.github_org is None:
+                    raise RepoDiscoveryError("repo discover requires --github-org")
+                if args.select is None:
+                    raise RepoDiscoveryError("repo discover requires --select in non-interactive use")
+                discovered = discover_github_org(args.github_org)
+                selected = select_discovered_repos(discovered, args.select)
+                entries = register_discovered_repos(root, selected)
+                for entry in entries:
+                    print(f"Registered repo {entry.id} at {_repo_location(entry)}")
+                return 0
+
             if args.repo_command == "set-path":
                 entry = set_repo_path(root, Path.cwd(), args.repo_id, args.path)
                 print(f"Updated repo {entry.id} path to {entry.local_path}")
@@ -140,7 +161,7 @@ def main(argv: list[str] | None = None) -> int:
                     )
                 return 0
 
-    except (OrgPackError, RepoRegistryError) as exc:
+    except (OrgPackError, RepoRegistryError, RepoDiscoveryError) as exc:
         print(f"error: {exc}", file=sys.stderr)
         return 1
 

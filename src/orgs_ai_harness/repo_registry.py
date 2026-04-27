@@ -98,6 +98,23 @@ def add_repo(
     return entry
 
 
+def add_repo_entries(root: Path, new_entries: tuple[RepoEntry, ...]) -> tuple[RepoEntry, ...]:
+    """Append pre-normalized repo entries to the registry atomically."""
+
+    root = root.resolve()
+    entries = load_repo_entries(root / "harness.yml")
+    seen_ids = {entry.id for entry in entries}
+
+    for new_entry in new_entries:
+        _ensure_unique_repo_id(entries, new_entry.id)
+        if new_entry.id in seen_ids:
+            raise RepoRegistryError(f"repo id already selected in this operation: {new_entry.id}")
+        seen_ids.add(new_entry.id)
+
+    save_repo_entries(root / "harness.yml", (*entries, *new_entries))
+    return new_entries
+
+
 def load_repo_entries(config_path: Path) -> tuple[RepoEntry, ...]:
     config = load_harness_config(config_path)
     repos_block = next((block for block in config.blocks if block.key == "repos"), None)
