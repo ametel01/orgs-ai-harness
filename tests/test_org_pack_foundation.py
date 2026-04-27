@@ -441,6 +441,12 @@ class RepoRegistryTests(unittest.TestCase):
         env["PATH"] = f"{fake_bin}{os.pathsep}{env['PATH']}"
         return env
 
+    def cli_env_without_provider_tools(self, empty_bin: Path) -> dict[str, str]:
+        empty_bin.mkdir(exist_ok=True)
+        env = self.cli_env()
+        env["PATH"] = str(empty_bin)
+        return env
+
     def write_fake_gh(self, fake_bin: Path, payload: str, target: str = "acme") -> None:
         fake_bin.mkdir(exist_ok=True)
         gh_path = fake_bin / "gh"
@@ -453,6 +459,20 @@ class RepoRegistryTests(unittest.TestCase):
             "    print('unexpected gh args: ' + ' '.join(sys.argv[1:]), file=sys.stderr)\n"
             "    raise SystemExit(2)\n"
             "print(payload)\n",
+            encoding="utf-8",
+        )
+        gh_path.chmod(0o755)
+
+    def write_fake_gh_failure(self, fake_bin: Path, stderr: str, exit_code: int = 1) -> None:
+        fake_bin.mkdir(exist_ok=True)
+        gh_path = fake_bin / "gh"
+        gh_path.write_text(
+            "#!/usr/bin/env python3\n"
+            "import sys\n"
+            f"stderr = {stderr!r}\n"
+            f"exit_code = {exit_code!r}\n"
+            "print(stderr, file=sys.stderr)\n"
+            "raise SystemExit(exit_code)\n",
             encoding="utf-8",
         )
         gh_path.chmod(0o755)
@@ -968,6 +988,107 @@ class RepoRegistryTests(unittest.TestCase):
             root = tmp_path / DEFAULT_PACK_DIR
             entries = load_repo_entries(root / "harness.yml")
             self.assertEqual(entries[0].local_path, "../covered-repos/api-service")
+
+    def test_cli_repo_discover_missing_gh_reports_setup_message_without_mutation(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            tmp_path = Path(tmp)
+            init_org_pack(tmp_path, "acme")
+            config_path = tmp_path / DEFAULT_PACK_DIR / "harness.yml"
+            before = config_path.read_bytes()
+
+            discover_result = subprocess.run(
+                [
+                    sys.executable,
+                    "-m",
+                    "orgs_ai_harness",
+                    "repo",
+                    "discover",
+                    "--github-org",
+                    "acme",
+                    "--select",
+                    "api-service",
+                ],
+                cwd=tmp,
+                env=self.cli_env_without_provider_tools(tmp_path / "empty-bin"),
+                text=True,
+                capture_output=True,
+                check=False,
+            )
+
+            self.assertNotEqual(discover_result.returncode, 0)
+            self.assertIn("GitHub CLI 'gh' is required", discover_result.stderr)
+            self.assertIn("gh auth login", discover_result.stderr)
+            self.assertEqual(config_path.read_bytes(), before)
+
+    def test_cli_repo_discover_unauthenticated_gh_reports_login_without_mutation(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            tmp_path = Path(tmp)
+            init_org_pack(tmp_path, "acme")
+            fake_bin = tmp_path / "fake-bin"
+            self.write_fake_gh_failure(
+                fake_bin,
+                "authentication required\nrun gh auth login to continue\nextra noisy detail",
+            )
+            config_path = tmp_path / DEFAULT_PACK_DIR / "harness.yml"
+            before = config_path.read_bytes()
+
+            discover_result = subprocess.run(
+                [
+                    sys.executable,
+                    "-m",
+                    "orgs_ai_harness",
+                    "repo",
+                    "discover",
+                    "--github-org",
+                    "acme",
+                    "--select",
+                    "api-service",
+                ],
+                cwd=tmp,
+                env=self.cli_env_with_fake_gh(fake_bin),
+                text=True,
+                capture_output=True,
+                check=False,
+            )
+
+            self.assertNotEqual(discover_result.returncode, 0)
+            self.assertIn("not authenticated", discover_result.stderr)
+            self.assertIn("gh auth login", discover_result.stderr)
+            self.assertNotIn("extra noisy detail", discover_result.stderr)
+            self.assertEqual(config_path.read_bytes(), before)
+
+    def test_cli_repo_discover_provider_failure_reports_concise_error_without_mutation(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            tmp_path = Path(tmp)
+            init_org_pack(tmp_path, "acme")
+            fake_bin = tmp_path / "fake-bin"
+            self.write_fake_gh_failure(fake_bin, "first failure line\nsecond noisy line")
+            config_path = tmp_path / DEFAULT_PACK_DIR / "harness.yml"
+            before = config_path.read_bytes()
+
+            discover_result = subprocess.run(
+                [
+                    sys.executable,
+                    "-m",
+                    "orgs_ai_harness",
+                    "repo",
+                    "discover",
+                    "--github-org",
+                    "acme",
+                    "--select",
+                    "api-service",
+                ],
+                cwd=tmp,
+                env=self.cli_env_with_fake_gh(fake_bin),
+                text=True,
+                capture_output=True,
+                check=False,
+            )
+
+            self.assertNotEqual(discover_result.returncode, 0)
+            self.assertIn("gh repo discovery failed: first failure line", discover_result.stderr)
+            self.assertNotIn("second noisy line", discover_result.stderr)
+            self.assertEqual(config_path.read_bytes(), before)
 
     def test_add_remote_ssh_url_writes_registry_entry_without_local_path(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:

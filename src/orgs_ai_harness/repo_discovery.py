@@ -183,8 +183,7 @@ def _run_gh_repo_list(target: str) -> tuple[DiscoveredRepo, ...]:
         raise RepoDiscoveryError(f"failed to run gh: {exc}") from exc
 
     if result.returncode != 0:
-        message = result.stderr.strip() or result.stdout.strip() or "unknown gh failure"
-        raise RepoDiscoveryError(f"gh repo discovery failed: {message}")
+        raise RepoDiscoveryError(_format_gh_failure(result.stdout, result.stderr))
 
     try:
         payload = json.loads(result.stdout)
@@ -213,6 +212,16 @@ def _discovered_repo_from_gh(record: object) -> DiscoveredRepo:
         fork=_bool_field(record, "isFork"),
         description=_optional_string(record, "description"),
     )
+
+
+def _format_gh_failure(stdout: str, stderr: str) -> str:
+    output = (stderr.strip() or stdout.strip() or "unknown gh failure").strip()
+    lowered = output.lower()
+    if "gh auth login" in lowered or "not logged" in lowered or "authentication" in lowered:
+        return "GitHub CLI 'gh' is not authenticated. Run 'gh auth login' before discovery."
+
+    first_line = next((line.strip() for line in output.splitlines() if line.strip()), "unknown gh failure")
+    return f"gh repo discovery failed: {first_line}"
 
 
 def _repo_entry_from_discovered(repo: DiscoveredRepo, *, local_path: str | None = None) -> RepoEntry:
