@@ -16,7 +16,13 @@ from orgs_ai_harness.org_pack import (
     init_org_pack,
     resolve_default_root,
 )
-from orgs_ai_harness.repo_registry import add_repo, load_repo_entries
+from orgs_ai_harness.repo_registry import (
+    RepoRegistryError,
+    add_repo,
+    derive_repo_id_from_path,
+    derive_repo_id_from_url,
+    load_repo_entries,
+)
 from orgs_ai_harness.validation import validate_org_pack
 
 
@@ -580,6 +586,108 @@ class RepoRegistryTests(unittest.TestCase):
             )
 
             self.assertEqual(validate_result.returncode, 0, validate_result.stderr)
+
+    def test_repo_id_derivation_normalizes_local_and_remote_inputs(self) -> None:
+        self.assertEqual(derive_repo_id_from_path(Path("/work/API Service.git")), "api-service")
+        self.assertEqual(derive_repo_id_from_url("git@github.com:acme/API Service.git"), "api-service")
+        self.assertEqual(derive_repo_id_from_url("https://github.com/acme/API Service.git"), "api-service")
+
+    def test_duplicate_repo_add_fails_without_mutating_registry(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            tmp_path = Path(tmp)
+            (tmp_path / "api-service").mkdir()
+            root = init_org_pack(tmp_path, "acme")
+            add_repo(root, tmp_path, "api-service", purpose="Core backend API and auth")
+            config_path = root / "harness.yml"
+            before = config_path.read_bytes()
+
+            with self.assertRaises(RepoRegistryError) as raised:
+                add_repo(root, tmp_path, "git@github.com:acme/api-service.git", owner="platform")
+
+            self.assertIn("repo id already registered: api-service", str(raised.exception))
+            self.assertIn("../api-service", str(raised.exception))
+            self.assertEqual(config_path.read_bytes(), before)
+
+    def test_cli_duplicate_repo_add_reports_collision_owner(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            tmp_path = Path(tmp)
+            (tmp_path / "api-service").mkdir()
+            init_org_pack(tmp_path, "acme")
+
+            first_result = subprocess.run(
+                [sys.executable, "-m", "orgs_ai_harness", "repo", "add", "api-service"],
+                cwd=tmp,
+                env=self.cli_env(),
+                text=True,
+                capture_output=True,
+                check=False,
+            )
+            self.assertEqual(first_result.returncode, 0, first_result.stderr)
+
+            second_result = subprocess.run(
+                [
+                    sys.executable,
+                    "-m",
+                    "orgs_ai_harness",
+                    "repo",
+                    "add",
+                    "https://github.com/acme/api-service.git",
+                ],
+                cwd=tmp,
+                env=self.cli_env(),
+                text=True,
+                capture_output=True,
+                check=False,
+            )
+
+            self.assertNotEqual(second_result.returncode, 0)
+            self.assertIn("repo id already registered: api-service", second_result.stderr)
+            self.assertIn("../api-service", second_result.stderr)
+
+    def test_validation_reports_duplicate_repo_ids_in_manual_config(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            root = init_org_pack(Path(tmp), "acme")
+            config_path = root / "harness.yml"
+            config_path.write_text(
+                "org:\n"
+                "  name: acme\n"
+                "  skills_version: 1\n"
+                "\n"
+                "providers: []\n"
+                "repos:\n"
+                "  - id: api-service\n"
+                "    name: api-service\n"
+                "    owner: null\n"
+                "    purpose: null\n"
+                "    url: null\n"
+                "    default_branch: main\n"
+                "    local_path: ../api-service\n"
+                "    coverage_status: selected\n"
+                "    active: true\n"
+                "    pack_ref: null\n"
+                "    external: false\n"
+                "  - id: api-service\n"
+                "    name: api-service\n"
+                "    owner: null\n"
+                "    purpose: null\n"
+                "    url: git@github.com:acme/api-service.git\n"
+                "    default_branch: main\n"
+                "    local_path: null\n"
+                "    coverage_status: selected\n"
+                "    active: true\n"
+                "    pack_ref: null\n"
+                "    external: false\n"
+                "redaction:\n"
+                "  globs: []\n"
+                "  regexes: []\n"
+                "command_permissions: []\n",
+                encoding="utf-8",
+            )
+
+            result = validate_org_pack(root)
+
+            self.assertFalse(result.ok)
+            self.assertTrue(any("duplicate repo id: api-service" in error for error in result.errors))
 
 
 if __name__ == "__main__":

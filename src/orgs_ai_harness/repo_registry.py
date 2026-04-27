@@ -50,7 +50,7 @@ def add_repo(
 
     if looks_like_remote_url(raw_value):
         repo_name = derive_repo_name_from_url(raw_value)
-        repo_id = _normalize_repo_id(repo_name)
+        repo_id = derive_repo_id_from_url(raw_value)
         _ensure_unique_repo_id(entries, repo_id)
         entry = RepoEntry(
             id=repo_id,
@@ -188,6 +188,10 @@ def derive_repo_id_from_path(path: Path) -> str:
     return _normalize_repo_id(name)
 
 
+def derive_repo_id_from_url(url: str) -> str:
+    return _normalize_repo_id(derive_repo_name_from_url(url))
+
+
 def derive_repo_name_from_url(url: str) -> str:
     cleaned = url.strip().rstrip("/")
     if not cleaned:
@@ -307,7 +311,8 @@ def _normalize_repo_id(name: str) -> str:
 def _ensure_unique_repo_id(entries: tuple[RepoEntry, ...], repo_id: str) -> None:
     for entry in entries:
         if entry.id == repo_id:
-            raise RepoRegistryError(f"repo id already registered: {repo_id}")
+            location = entry.local_path or entry.url or entry.name
+            raise RepoRegistryError(f"repo id already registered: {repo_id} is owned by {location}")
 
 
 def _resolve_user_path(cwd: Path, value: str) -> Path:

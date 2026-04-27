@@ -97,7 +97,11 @@ def _validate_minimum_config(config_text: str) -> list[str]:
         except RepoRegistryError as exc:
             errors.append(str(exc))
         else:
+            seen_repo_ids: set[str] = set()
             for entry in entries:
+                if entry.id in seen_repo_ids:
+                    errors.append(f"harness.yml contains duplicate repo id: {entry.id}")
+                seen_repo_ids.add(entry.id)
                 errors.extend(_validate_repo_entry(entry.id, entry.coverage_status, entry.active, entry.local_path))
 
     redaction_block = blocks.get("redaction")
