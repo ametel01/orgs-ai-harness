@@ -102,7 +102,15 @@ def _validate_minimum_config(config_text: str) -> list[str]:
                 if entry.id in seen_repo_ids:
                     errors.append(f"harness.yml contains duplicate repo id: {entry.id}")
                 seen_repo_ids.add(entry.id)
-                errors.extend(_validate_repo_entry(entry.id, entry.coverage_status, entry.active, entry.local_path))
+                errors.extend(
+                    _validate_repo_entry(
+                        entry.id,
+                        entry.coverage_status,
+                        entry.active,
+                        entry.local_path,
+                        entry.deactivation_reason,
+                    )
+                )
 
     redaction_block = blocks.get("redaction")
     if redaction_block is None:
@@ -115,7 +123,13 @@ def _validate_minimum_config(config_text: str) -> list[str]:
     return errors
 
 
-def _validate_repo_entry(repo_id: str, coverage_status: str, active: bool, local_path: str | None) -> list[str]:
+def _validate_repo_entry(
+    repo_id: str,
+    coverage_status: str,
+    active: bool,
+    local_path: str | None,
+    deactivation_reason: str | None,
+) -> list[str]:
     errors: list[str] = []
 
     if not _is_valid_repo_id(repo_id):
@@ -123,13 +137,18 @@ def _validate_repo_entry(repo_id: str, coverage_status: str, active: bool, local
             f"harness.yml repo id is invalid: {repo_id} "
             "(use letters, numbers, dots, underscores, or hyphens)"
         )
-    if coverage_status != "selected":
+    if coverage_status not in {"selected", "deactivated"}:
         errors.append(
             f"harness.yml repo {repo_id} has invalid coverage_status: {coverage_status} "
-            "(supported value in this slice: selected)"
+            "(supported values: selected, deactivated)"
         )
     if coverage_status == "selected" and not active:
         errors.append(f"harness.yml repo {repo_id} with selected coverage must be active")
+    if coverage_status == "deactivated":
+        if active:
+            errors.append(f"harness.yml repo {repo_id} with deactivated coverage must be inactive")
+        if deactivation_reason is None or not deactivation_reason.strip():
+            errors.append(f"harness.yml repo {repo_id} with deactivated coverage must include deactivation_reason")
     if local_path is not None and Path(local_path).is_absolute():
         errors.append(f"harness.yml repo {repo_id} local_path must be relative to the org pack root")
 

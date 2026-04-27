@@ -16,6 +16,7 @@ from orgs_ai_harness.repo_registry import (
     RepoEntry,
     RepoRegistryError,
     add_repo,
+    deactivate_repo,
     load_repo_entries,
     set_repo_path,
 )
@@ -43,6 +44,9 @@ def build_parser() -> argparse.ArgumentParser:
     repo_set_path = repo_subparsers.add_parser("set-path", help="Repair a registered local repository path")
     repo_set_path.add_argument("repo_id", help="Registered repo id")
     repo_set_path.add_argument("path", help="New local repository path")
+    repo_deactivate = repo_subparsers.add_parser("deactivate", help="Deactivate a registered repository")
+    repo_deactivate.add_argument("repo_id", help="Registered repo id")
+    repo_deactivate.add_argument("--reason", required=True, help="Reason for deactivation")
     repo_subparsers.add_parser("list", help="List registered repositories")
 
     subparsers.add_parser("validate", help="Validate the org skill pack")
@@ -105,6 +109,11 @@ def main(argv: list[str] | None = None) -> int:
             if args.repo_command == "set-path":
                 entry = set_repo_path(root, Path.cwd(), args.repo_id, args.path)
                 print(f"Updated repo {entry.id} path to {entry.local_path}")
+                return 0
+
+            if args.repo_command == "deactivate":
+                entry = deactivate_repo(root, args.repo_id, args.reason)
+                print(f"Deactivated repo {entry.id}: {entry.deactivation_reason}")
                 return 0
 
             if args.repo_command == "list":

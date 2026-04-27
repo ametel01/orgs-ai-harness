@@ -26,6 +26,7 @@ class RepoEntry:
     local_path: str | None
     coverage_status: str
     active: bool
+    deactivation_reason: str | None
     pack_ref: str | None
     external: bool
 
@@ -62,6 +63,7 @@ def add_repo(
             local_path=None,
             coverage_status="selected",
             active=True,
+            deactivation_reason=None,
             pack_ref=None,
             external=False,
         )
@@ -87,6 +89,7 @@ def add_repo(
         local_path=_relative_path(repo_path, root),
         coverage_status="selected",
         active=True,
+        deactivation_reason=None,
         pack_ref=None,
         external=False,
     )
@@ -126,6 +129,40 @@ def set_repo_path(root: Path, cwd: Path, repo_id: str, path_value: str) -> RepoE
     for entry in entries:
         if entry.id == normalized_repo_id:
             updated_entry = replace(entry, local_path=_relative_path(repo_path, root))
+            updated_entries.append(updated_entry)
+        else:
+            updated_entries.append(entry)
+
+    if updated_entry is None:
+        raise RepoRegistryError(f"repo id is not registered: {normalized_repo_id}")
+
+    save_repo_entries(root / "harness.yml", tuple(updated_entries))
+    return updated_entry
+
+
+def deactivate_repo(root: Path, repo_id: str, reason: str) -> RepoEntry:
+    """Mark a registered repo inactive while preserving its registry record."""
+
+    normalized_repo_id = repo_id.strip()
+    if not normalized_repo_id:
+        raise RepoRegistryError("repo id cannot be empty")
+
+    normalized_reason = reason.strip()
+    if not normalized_reason:
+        raise RepoRegistryError("deactivation reason cannot be empty")
+
+    root = root.resolve()
+    entries = load_repo_entries(root / "harness.yml")
+    updated_entries: list[RepoEntry] = []
+    updated_entry: RepoEntry | None = None
+    for entry in entries:
+        if entry.id == normalized_repo_id:
+            updated_entry = replace(
+                entry,
+                coverage_status="deactivated",
+                active=False,
+                deactivation_reason=normalized_reason,
+            )
             updated_entries.append(updated_entry)
         else:
             updated_entries.append(entry)
@@ -206,6 +243,7 @@ def render_repo_block(entries: tuple[RepoEntry, ...]) -> ConfigBlock:
         "local_path",
         "coverage_status",
         "active",
+        "deactivation_reason",
         "pack_ref",
         "external",
     )
@@ -276,6 +314,7 @@ def _entry_from_record(record: dict[str, object]) -> RepoEntry:
         local_path=_optional_string(record, "local_path"),
         coverage_status=_required_string(record, "coverage_status"),
         active=active,
+        deactivation_reason=_optional_string(record, "deactivation_reason"),
         pack_ref=_optional_string(record, "pack_ref"),
         external=external,
     )

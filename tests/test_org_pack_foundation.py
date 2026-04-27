@@ -19,6 +19,7 @@ from orgs_ai_harness.org_pack import (
 from orgs_ai_harness.repo_registry import (
     RepoRegistryError,
     add_repo,
+    deactivate_repo,
     derive_repo_id_from_path,
     derive_repo_id_from_url,
     load_repo_entries,
@@ -791,6 +792,152 @@ class RepoRegistryTests(unittest.TestCase):
             )
             self.assertEqual(list_result.returncode, 0, list_result.stderr)
             self.assertIn("../moved-api-service", list_result.stdout)
+
+            validate_result = subprocess.run(
+                [sys.executable, "-m", "orgs_ai_harness", "validate"],
+                cwd=tmp,
+                env=self.cli_env(),
+                text=True,
+                capture_output=True,
+                check=False,
+            )
+            self.assertEqual(validate_result.returncode, 0, validate_result.stderr)
+
+    def test_deactivate_local_repo_preserves_metadata_and_records_reason(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            tmp_path = Path(tmp)
+            (tmp_path / "api-service").mkdir()
+            root = init_org_pack(tmp_path, "acme")
+            add_repo(root, tmp_path, "api-service", purpose="Core backend API and auth", owner="platform")
+
+            deactivated = deactivate_repo(root, "api-service", "Temporarily excluded")
+
+            self.assertEqual(deactivated.coverage_status, "deactivated")
+            self.assertFalse(deactivated.active)
+            self.assertEqual(deactivated.deactivation_reason, "Temporarily excluded")
+            self.assertEqual(deactivated.purpose, "Core backend API and auth")
+            self.assertEqual(deactivated.owner, "platform")
+            self.assertEqual(deactivated.local_path, "../api-service")
+            self.assertTrue(validate_org_pack(root).ok)
+
+    def test_deactivate_remote_repo_preserves_url_and_lists_status(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            root = init_org_pack(Path(tmp), "acme")
+            add_repo(root, Path(tmp), "git@github.com:acme/web-app.git", owner="product-engineering")
+
+            deactivated = deactivate_repo(root, "web-app", "Temporarily excluded")
+
+            self.assertEqual(deactivated.url, "git@github.com:acme/web-app.git")
+            self.assertIsNone(deactivated.local_path)
+            self.assertEqual(deactivated.coverage_status, "deactivated")
+            self.assertFalse(deactivated.active)
+            self.assertTrue(validate_org_pack(root).ok)
+
+    def test_deactivate_repo_requires_reason_without_mutating_registry(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            tmp_path = Path(tmp)
+            (tmp_path / "api-service").mkdir()
+            root = init_org_pack(tmp_path, "acme")
+            add_repo(root, tmp_path, "api-service")
+            config_path = root / "harness.yml"
+            before = config_path.read_bytes()
+
+            with self.assertRaises(RepoRegistryError) as raised:
+                deactivate_repo(root, "api-service", " ")
+
+            self.assertIn("deactivation reason cannot be empty", str(raised.exception))
+            self.assertEqual(config_path.read_bytes(), before)
+
+    def test_validation_reports_deactivated_repo_without_reason(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            root = init_org_pack(Path(tmp), "acme")
+            config_path = root / "harness.yml"
+            config_path.write_text(
+                "org:\n"
+                "  name: acme\n"
+                "  skills_version: 1\n"
+                "\n"
+                "providers: []\n"
+                "repos:\n"
+                "  - id: web-app\n"
+                "    name: web-app\n"
+                "    owner: product-engineering\n"
+                "    purpose: null\n"
+                "    url: git@github.com:acme/web-app.git\n"
+                "    default_branch: main\n"
+                "    local_path: null\n"
+                "    coverage_status: deactivated\n"
+                "    active: false\n"
+                "    deactivation_reason: null\n"
+                "    pack_ref: null\n"
+                "    external: false\n"
+                "redaction:\n"
+                "  globs: []\n"
+                "  regexes: []\n"
+                "command_permissions: []\n",
+                encoding="utf-8",
+            )
+
+            result = validate_org_pack(root)
+
+            self.assertFalse(result.ok)
+            self.assertTrue(any("must include deactivation_reason" in error for error in result.errors))
+
+    def test_cli_repo_deactivate_lists_inactive_status_and_validates(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            init_org_pack(Path(tmp), "acme")
+
+            add_result = subprocess.run(
+                [
+                    sys.executable,
+                    "-m",
+                    "orgs_ai_harness",
+                    "repo",
+                    "add",
+                    "git@github.com:acme/web-app.git",
+                    "--owner",
+                    "product-engineering",
+                ],
+                cwd=tmp,
+                env=self.cli_env(),
+                text=True,
+                capture_output=True,
+                check=False,
+            )
+            self.assertEqual(add_result.returncode, 0, add_result.stderr)
+
+            deactivate_result = subprocess.run(
+                [
+                    sys.executable,
+                    "-m",
+                    "orgs_ai_harness",
+                    "repo",
+                    "deactivate",
+                    "web-app",
+                    "--reason",
+                    "Temporarily excluded",
+                ],
+                cwd=tmp,
+                env=self.cli_env(),
+                text=True,
+                capture_output=True,
+                check=False,
+            )
+            self.assertEqual(deactivate_result.returncode, 0, deactivate_result.stderr)
+            self.assertIn("Deactivated repo web-app: Temporarily excluded", deactivate_result.stdout)
+
+            list_result = subprocess.run(
+                [sys.executable, "-m", "orgs_ai_harness", "repo", "list"],
+                cwd=tmp,
+                env=self.cli_env(),
+                text=True,
+                capture_output=True,
+                check=False,
+            )
+            self.assertEqual(list_result.returncode, 0, list_result.stderr)
+            self.assertIn("web-app", list_result.stdout)
+            self.assertIn("active=false", list_result.stdout)
+            self.assertIn("status=deactivated", list_result.stdout)
 
             validate_result = subprocess.run(
                 [sys.executable, "-m", "orgs_ai_harness", "validate"],
