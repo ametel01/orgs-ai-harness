@@ -7,7 +7,14 @@ import tempfile
 import unittest
 from pathlib import Path
 
-from orgs_ai_harness.org_pack import DEFAULT_PACK_DIR, OrgPackError, init_org_pack
+from orgs_ai_harness.org_pack import (
+    ATTACHMENT_FILE,
+    DEFAULT_PACK_DIR,
+    OrgPackError,
+    attach_org_pack,
+    init_org_pack,
+    resolve_default_root,
+)
 from orgs_ai_harness.validation import validate_org_pack
 
 
@@ -45,6 +52,41 @@ class OrgPackFoundationTests(unittest.TestCase):
             self.assertEqual(config_path.read_bytes(), config_before)
             self.assertEqual(resolver_path.read_bytes(), resolver_before)
 
+    def test_attach_records_existing_local_pack_without_rewriting_it(self) -> None:
+        with tempfile.TemporaryDirectory() as source_tmp, tempfile.TemporaryDirectory() as cwd_tmp:
+            root = init_org_pack(Path(source_tmp), "acme")
+            config_path = root / "harness.yml"
+            config_before = config_path.read_bytes()
+
+            attached_root = attach_org_pack(Path(cwd_tmp), str(root))
+
+            self.assertEqual(attached_root, root)
+            self.assertEqual(resolve_default_root(Path(cwd_tmp)), root)
+            self.assertEqual(config_path.read_bytes(), config_before)
+            self.assertEqual((Path(cwd_tmp) / ATTACHMENT_FILE).read_text(encoding="utf-8"), f"{root}\n")
+
+    def test_attach_rejects_invalid_local_pack(self) -> None:
+        with tempfile.TemporaryDirectory() as invalid_tmp, tempfile.TemporaryDirectory() as cwd_tmp:
+            invalid_root = Path(invalid_tmp) / "not-a-pack"
+            invalid_root.mkdir()
+
+            with self.assertRaises(OrgPackError) as raised:
+                attach_org_pack(Path(cwd_tmp), str(invalid_root))
+
+            self.assertIn("invalid org pack", str(raised.exception))
+            self.assertIn("missing required file: harness.yml", str(raised.exception))
+            self.assertFalse((Path(cwd_tmp) / ATTACHMENT_FILE).exists())
+
+    def test_attach_records_remote_url_without_local_setup(self) -> None:
+        with tempfile.TemporaryDirectory() as cwd_tmp:
+            attached_root = attach_org_pack(Path(cwd_tmp), "git@github.com:acme/org-agent-skills.git")
+
+            self.assertIsNone(attached_root)
+            self.assertEqual(
+                (Path(cwd_tmp) / ATTACHMENT_FILE).read_text(encoding="utf-8"),
+                "git@github.com:acme/org-agent-skills.git\n",
+            )
+
     def test_cli_init_then_validate(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
             init_result = subprocess.run(
@@ -69,6 +111,91 @@ class OrgPackFoundationTests(unittest.TestCase):
 
             self.assertEqual(validate_result.returncode, 0, validate_result.stderr)
             self.assertIn("Validation passed", validate_result.stdout)
+
+    def test_cli_attach_existing_pack_then_validate(self) -> None:
+        with tempfile.TemporaryDirectory() as source_tmp, tempfile.TemporaryDirectory() as cwd_tmp:
+            root = init_org_pack(Path(source_tmp), "acme")
+            config_before = (root / "harness.yml").read_bytes()
+
+            attach_result = subprocess.run(
+                [
+                    sys.executable,
+                    "-m",
+                    "orgs_ai_harness",
+                    "org",
+                    "init",
+                    "--repo",
+                    str(root),
+                ],
+                cwd=cwd_tmp,
+                env=self.cli_env(),
+                text=True,
+                capture_output=True,
+                check=False,
+            )
+            self.assertEqual(attach_result.returncode, 0, attach_result.stderr)
+            self.assertIn("Attached org skill pack", attach_result.stdout)
+
+            validate_result = subprocess.run(
+                [sys.executable, "-m", "orgs_ai_harness", "validate"],
+                cwd=cwd_tmp,
+                env=self.cli_env(),
+                text=True,
+                capture_output=True,
+                check=False,
+            )
+
+            self.assertEqual(validate_result.returncode, 0, validate_result.stderr)
+            self.assertEqual((root / "harness.yml").read_bytes(), config_before)
+
+    def test_cli_attach_invalid_pack_reports_validation_errors(self) -> None:
+        with tempfile.TemporaryDirectory() as invalid_tmp, tempfile.TemporaryDirectory() as cwd_tmp:
+            invalid_root = Path(invalid_tmp) / "not-a-pack"
+            invalid_root.mkdir()
+
+            attach_result = subprocess.run(
+                [
+                    sys.executable,
+                    "-m",
+                    "orgs_ai_harness",
+                    "org",
+                    "init",
+                    "--repo",
+                    str(invalid_root),
+                ],
+                cwd=cwd_tmp,
+                env=self.cli_env(),
+                text=True,
+                capture_output=True,
+                check=False,
+            )
+
+            self.assertNotEqual(attach_result.returncode, 0)
+            self.assertIn("missing required file: harness.yml", attach_result.stderr)
+            self.assertFalse((Path(cwd_tmp) / ATTACHMENT_FILE).exists())
+
+    def test_cli_attach_remote_url_does_not_create_hosted_resources(self) -> None:
+        with tempfile.TemporaryDirectory() as cwd_tmp:
+            attach_result = subprocess.run(
+                [
+                    sys.executable,
+                    "-m",
+                    "orgs_ai_harness",
+                    "org",
+                    "init",
+                    "--repo",
+                    "git@github.com:acme/org-agent-skills.git",
+                ],
+                cwd=cwd_tmp,
+                env=self.cli_env(),
+                text=True,
+                capture_output=True,
+                check=False,
+            )
+
+            self.assertEqual(attach_result.returncode, 0, attach_result.stderr)
+            self.assertIn("No clone, push, or hosted setup was performed", attach_result.stdout)
+            self.assertFalse((Path(cwd_tmp) / DEFAULT_PACK_DIR).exists())
 
     def test_cli_reinit_fails_without_modifying_existing_pack(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:

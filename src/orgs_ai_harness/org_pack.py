@@ -11,6 +11,7 @@ class OrgPackError(Exception):
 
 DEFAULT_PACK_DIR = "org-agent-skills"
 DEFAULT_SKILLS_VERSION = 1
+ATTACHMENT_FILE = ".orgs-ai-harness-attachment"
 PROTECTED_INIT_PATHS = (
     "harness.yml",
     "org",
@@ -24,6 +25,16 @@ def resolve_default_root(cwd: Path) -> Path:
     """Resolve the org pack root for commands run from common locations."""
 
     cwd = cwd.resolve()
+    attachment = cwd / ATTACHMENT_FILE
+    if attachment.is_file():
+        target = attachment.read_text(encoding="utf-8").strip()
+        if _looks_like_remote_url(target):
+            raise OrgPackError(
+                "attached org pack is a remote URL and is not available locally. "
+                "Clone it first, then run 'harness org init --repo <local-path>'."
+            )
+        return Path(target).expanduser().resolve()
+
     if (cwd / "harness.yml").exists():
         return cwd
 
@@ -60,6 +71,40 @@ def init_org_pack(cwd: Path, org_name: str) -> Path:
     return root
 
 
+def attach_org_pack(cwd: Path, repo: str) -> Path | None:
+    """Attach the current working directory to an existing org pack."""
+
+    cwd = cwd.resolve()
+    target = repo.strip()
+    if not target:
+        raise OrgPackError("repo path or URL cannot be empty")
+
+    if _looks_like_remote_url(target):
+        _write_attachment(cwd, target)
+        return None
+
+    root = Path(target).expanduser()
+    if not root.is_absolute():
+        root = (cwd / root).resolve()
+    else:
+        root = root.resolve()
+
+    if not root.exists():
+        raise OrgPackError(f"org pack path does not exist: {root}")
+    if not root.is_dir():
+        raise OrgPackError(f"org pack path is not a directory: {root}")
+
+    from orgs_ai_harness.validation import validate_org_pack
+
+    result = validate_org_pack(root)
+    if not result.ok:
+        formatted = "; ".join(result.errors)
+        raise OrgPackError(f"invalid org pack at {root}: {formatted}")
+
+    _write_attachment(cwd, str(root))
+    return root
+
+
 def _ensure_can_initialize(root: Path) -> None:
     existing = [relative for relative in PROTECTED_INIT_PATHS if (root / relative).exists()]
     if not existing:
@@ -71,6 +116,19 @@ def _ensure_can_initialize(root: Path) -> None:
         f"at {root}: {existing_list}. "
         "Use 'harness org init --repo <path>' to attach an existing pack, "
         "repair the directory manually, or run init from a different directory."
+    )
+
+
+def _write_attachment(cwd: Path, target: str) -> None:
+    (cwd / ATTACHMENT_FILE).write_text(f"{target}\n", encoding="utf-8")
+
+
+def _looks_like_remote_url(value: str) -> bool:
+    return (
+        value.startswith("git@")
+        or value.startswith("ssh://")
+        or value.startswith("https://")
+        or value.startswith("http://")
     )
 
 
