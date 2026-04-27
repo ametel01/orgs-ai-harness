@@ -1,0 +1,293 @@
+"""Repo registry mutation and rendering."""
+
+from __future__ import annotations
+
+from dataclasses import dataclass
+from pathlib import Path
+import json
+import os
+import re
+
+from orgs_ai_harness.config import ConfigBlock, HarnessConfig, load_harness_config, save_harness_config
+
+
+class RepoRegistryError(Exception):
+    """Raised when repo registry operations cannot be completed."""
+
+
+@dataclass(frozen=True)
+class RepoEntry:
+    id: str
+    name: str
+    owner: str | None
+    purpose: str | None
+    url: str | None
+    default_branch: str | None
+    local_path: str | None
+    coverage_status: str
+    active: bool
+    pack_ref: str | None
+    external: bool
+
+
+def add_repo(
+    root: Path,
+    cwd: Path,
+    path_or_url: str,
+    *,
+    purpose: str | None = None,
+    owner: str | None = None,
+    default_branch: str | None = "main",
+) -> RepoEntry:
+    """Register a local repository in the org pack."""
+
+    raw_value = path_or_url.strip()
+    if not raw_value:
+        raise RepoRegistryError("repo path or URL cannot be empty")
+    if looks_like_remote_url(raw_value):
+        raise RepoRegistryError("remote repo URL registration is not available yet")
+
+    root = root.resolve()
+    repo_path = _resolve_user_path(cwd, raw_value)
+    if not repo_path.exists():
+        raise RepoRegistryError(f"repo path does not exist: {repo_path}")
+    if not repo_path.is_dir():
+        raise RepoRegistryError(f"repo path is not a directory: {repo_path}")
+
+    repo_id = derive_repo_id_from_path(repo_path)
+    entries = load_repo_entries(root / "harness.yml")
+    _ensure_unique_repo_id(entries, repo_id)
+
+    entry = RepoEntry(
+        id=repo_id,
+        name=repo_path.name,
+        owner=_normalize_optional(owner),
+        purpose=_normalize_optional(purpose),
+        url=None,
+        default_branch=_normalize_optional(default_branch),
+        local_path=_relative_path(repo_path, root),
+        coverage_status="selected",
+        active=True,
+        pack_ref=None,
+        external=False,
+    )
+    save_repo_entries(root / "harness.yml", (*entries, entry))
+    return entry
+
+
+def load_repo_entries(config_path: Path) -> tuple[RepoEntry, ...]:
+    config = load_harness_config(config_path)
+    repos_block = next((block for block in config.blocks if block.key == "repos"), None)
+    if repos_block is None:
+        return ()
+    return parse_repo_block(repos_block)
+
+
+def save_repo_entries(config_path: Path, entries: tuple[RepoEntry, ...]) -> None:
+    config = load_harness_config(config_path)
+    save_harness_config(config_path, replace_config_block(config, render_repo_block(entries)))
+
+
+def replace_config_block(config: HarnessConfig, replacement: ConfigBlock) -> HarnessConfig:
+    blocks: list[ConfigBlock] = []
+    replaced = False
+    for block in config.blocks:
+        if block.key == replacement.key:
+            blocks.append(replacement)
+            replaced = True
+        else:
+            blocks.append(block)
+    if not replaced:
+        blocks.append(replacement)
+    return HarnessConfig(config.org_name, config.skills_version, tuple(blocks))
+
+
+def parse_repo_block(block: ConfigBlock) -> tuple[RepoEntry, ...]:
+    if len(block.lines) == 1 and block.lines[0].strip() == "repos: []":
+        return ()
+    if block.lines[0].strip() != "repos:":
+        raise RepoRegistryError("harness.yml field repos must be a list")
+
+    records: list[dict[str, object]] = []
+    current: dict[str, object] | None = None
+
+    for line in block.lines[1:]:
+        if not line.strip():
+            continue
+        if line.startswith("  - "):
+            if current is not None:
+                records.append(current)
+            current = {}
+            remainder = line.removeprefix("  - ").strip()
+            if remainder:
+                key, value = _parse_field_line(remainder, line)
+                current[key] = value
+            continue
+        if line.startswith("    "):
+            if current is None:
+                raise RepoRegistryError("harness.yml field repos contains a field before any list item")
+            key, value = _parse_field_line(line.strip(), line)
+            current[key] = value
+            continue
+        raise RepoRegistryError(f"harness.yml field repos has invalid indentation: {line!r}")
+
+    if current is not None:
+        records.append(current)
+
+    return tuple(_entry_from_record(record) for record in records)
+
+
+def render_repo_block(entries: tuple[RepoEntry, ...]) -> ConfigBlock:
+    if not entries:
+        return ConfigBlock("repos", ("repos: []",))
+
+    lines = ["repos:"]
+    fields = (
+        "id",
+        "name",
+        "owner",
+        "purpose",
+        "url",
+        "default_branch",
+        "local_path",
+        "coverage_status",
+        "active",
+        "pack_ref",
+        "external",
+    )
+    for entry in entries:
+        values = entry.__dict__
+        first_field = fields[0]
+        lines.append(f"  - {first_field}: {_render_scalar(values[first_field])}")
+        for field in fields[1:]:
+            lines.append(f"    {field}: {_render_scalar(values[field])}")
+    return ConfigBlock("repos", tuple(lines))
+
+
+def derive_repo_id_from_path(path: Path) -> str:
+    name = path.name.removesuffix(".git")
+    return _normalize_repo_id(name)
+
+
+def looks_like_remote_url(value: str) -> bool:
+    return (
+        value.startswith("git@")
+        or value.startswith("ssh://")
+        or value.startswith("https://")
+        or value.startswith("http://")
+    )
+
+
+def _entry_from_record(record: dict[str, object]) -> RepoEntry:
+    required = ("id", "name", "coverage_status", "active", "external")
+    missing = [field for field in required if field not in record]
+    if missing:
+        missing_list = ", ".join(missing)
+        raise RepoRegistryError(f"harness.yml repo entry missing required field(s): {missing_list}")
+
+    active = record["active"]
+    if not isinstance(active, bool):
+        raise RepoRegistryError("harness.yml repo entry field active must be true or false")
+    external = record["external"]
+    if not isinstance(external, bool):
+        raise RepoRegistryError("harness.yml repo entry field external must be true or false")
+
+    return RepoEntry(
+        id=_required_string(record, "id"),
+        name=_required_string(record, "name"),
+        owner=_optional_string(record, "owner"),
+        purpose=_optional_string(record, "purpose"),
+        url=_optional_string(record, "url"),
+        default_branch=_optional_string(record, "default_branch"),
+        local_path=_optional_string(record, "local_path"),
+        coverage_status=_required_string(record, "coverage_status"),
+        active=active,
+        pack_ref=_optional_string(record, "pack_ref"),
+        external=external,
+    )
+
+
+def _required_string(record: dict[str, object], field: str) -> str:
+    value = record[field]
+    if not isinstance(value, str) or not value.strip():
+        raise RepoRegistryError(f"harness.yml repo entry field {field} must be a non-empty string")
+    return value
+
+
+def _optional_string(record: dict[str, object], field: str) -> str | None:
+    value = record.get(field)
+    if value is None:
+        return None
+    if not isinstance(value, str):
+        raise RepoRegistryError(f"harness.yml repo entry field {field} must be a string or null")
+    return value
+
+
+def _parse_field_line(content: str, original_line: str) -> tuple[str, object]:
+    if ":" not in content:
+        raise RepoRegistryError(f"harness.yml repo field is missing ':': {original_line!r}")
+    key, raw_value = content.split(":", 1)
+    key = key.strip()
+    if not key:
+        raise RepoRegistryError(f"harness.yml repo field has an empty key: {original_line!r}")
+    return key, _parse_scalar(raw_value.strip())
+
+
+def _parse_scalar(raw_value: str) -> object:
+    if raw_value in ("null", "~", ""):
+        return None
+    if raw_value == "true":
+        return True
+    if raw_value == "false":
+        return False
+    if raw_value.startswith('"') and raw_value.endswith('"'):
+        try:
+            return json.loads(raw_value)
+        except json.JSONDecodeError as exc:
+            raise RepoRegistryError(f"harness.yml repo string is invalid JSON-style YAML: {raw_value}") from exc
+    if raw_value.startswith("'") and raw_value.endswith("'"):
+        return raw_value[1:-1]
+    return raw_value
+
+
+def _render_scalar(value: object) -> str:
+    if value is None:
+        return "null"
+    if value is True:
+        return "true"
+    if value is False:
+        return "false"
+    if not isinstance(value, str):
+        raise TypeError(f"unsupported repo scalar value: {value!r}")
+    return json.dumps(value)
+
+
+def _normalize_repo_id(name: str) -> str:
+    repo_id = re.sub(r"[^A-Za-z0-9._-]+", "-", name.strip().lower()).strip("-._")
+    if not repo_id:
+        raise RepoRegistryError(f"cannot derive repo id from name: {name!r}")
+    return repo_id
+
+
+def _ensure_unique_repo_id(entries: tuple[RepoEntry, ...], repo_id: str) -> None:
+    for entry in entries:
+        if entry.id == repo_id:
+            raise RepoRegistryError(f"repo id already registered: {repo_id}")
+
+
+def _resolve_user_path(cwd: Path, value: str) -> Path:
+    path = Path(value).expanduser()
+    if not path.is_absolute():
+        path = cwd.resolve() / path
+    return path.resolve()
+
+
+def _relative_path(path: Path, root: Path) -> str:
+    return Path(os.path.relpath(path, root)).as_posix()
+
+
+def _normalize_optional(value: str | None) -> str | None:
+    if value is None:
+        return None
+    normalized = value.strip()
+    return normalized or None

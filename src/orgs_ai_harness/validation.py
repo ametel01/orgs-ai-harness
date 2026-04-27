@@ -7,6 +7,7 @@ from pathlib import Path
 import re
 
 from orgs_ai_harness.config import block_has_field, read_block_scalar, split_top_level_blocks
+from orgs_ai_harness.repo_registry import RepoRegistryError, parse_repo_block
 
 
 @dataclass(frozen=True)
@@ -89,6 +90,16 @@ def _validate_minimum_config(config_text: str) -> list[str]:
         if field_name not in blocks:
             errors.append(f"harness.yml missing required field: {field_name} (add '{field_name}: []')")
 
+    repos_block = blocks.get("repos")
+    if repos_block is not None:
+        try:
+            entries = parse_repo_block(repos_block)
+        except RepoRegistryError as exc:
+            errors.append(str(exc))
+        else:
+            for entry in entries:
+                errors.extend(_validate_repo_entry(entry.id, entry.coverage_status, entry.active, entry.local_path))
+
     redaction_block = blocks.get("redaction")
     if redaction_block is None:
         errors.append("harness.yml missing required field: redaction (add top-level 'redaction:' mapping)")
@@ -100,5 +111,30 @@ def _validate_minimum_config(config_text: str) -> list[str]:
     return errors
 
 
+def _validate_repo_entry(repo_id: str, coverage_status: str, active: bool, local_path: str | None) -> list[str]:
+    errors: list[str] = []
+
+    if not _is_valid_repo_id(repo_id):
+        errors.append(
+            f"harness.yml repo id is invalid: {repo_id} "
+            "(use letters, numbers, dots, underscores, or hyphens)"
+        )
+    if coverage_status != "selected":
+        errors.append(
+            f"harness.yml repo {repo_id} has invalid coverage_status: {coverage_status} "
+            "(supported value in this slice: selected)"
+        )
+    if coverage_status == "selected" and not active:
+        errors.append(f"harness.yml repo {repo_id} with selected coverage must be active")
+    if local_path is not None and Path(local_path).is_absolute():
+        errors.append(f"harness.yml repo {repo_id} local_path must be relative to the org pack root")
+
+    return errors
+
+
 def _is_valid_org_name(name: str) -> bool:
     return re.fullmatch(r"[A-Za-z0-9][A-Za-z0-9._-]*", name) is not None
+
+
+def _is_valid_repo_id(repo_id: str) -> bool:
+    return re.fullmatch(r"[A-Za-z0-9][A-Za-z0-9._-]*", repo_id) is not None

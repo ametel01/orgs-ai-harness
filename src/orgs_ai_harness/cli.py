@@ -12,6 +12,7 @@ from orgs_ai_harness.org_pack import (
     init_org_pack,
     resolve_default_root,
 )
+from orgs_ai_harness.repo_registry import RepoEntry, RepoRegistryError, add_repo, load_repo_entries
 from orgs_ai_harness.validation import validate_org_pack
 
 
@@ -25,6 +26,15 @@ def build_parser() -> argparse.ArgumentParser:
     init_source = org_init.add_mutually_exclusive_group(required=True)
     init_source.add_argument("--name", help="Organization name for the skill pack")
     init_source.add_argument("--repo", help="Existing org skill pack path or Git URL")
+
+    repo_parser = subparsers.add_parser("repo", help="Manage covered repositories")
+    repo_subparsers = repo_parser.add_subparsers(dest="repo_command", required=True)
+    repo_add = repo_subparsers.add_parser("add", help="Register a repository")
+    repo_add.add_argument("path_or_url", help="Local repository path or remote Git URL")
+    repo_add.add_argument("--purpose", help="Why this repository is covered")
+    repo_add.add_argument("--owner", help="Owning team or person")
+    repo_add.add_argument("--default-branch", default="main", help="Default branch name")
+    repo_subparsers.add_parser("list", help="List registered repositories")
 
     subparsers.add_parser("validate", help="Validate the org skill pack")
 
@@ -69,9 +79,39 @@ def main(argv: list[str] | None = None) -> int:
                 print(f"error: {error}", file=sys.stderr)
             return 1
 
-    except OrgPackError as exc:
+        if args.command == "repo":
+            root = resolve_default_root(Path.cwd())
+            if args.repo_command == "add":
+                entry = add_repo(
+                    root,
+                    Path.cwd(),
+                    args.path_or_url,
+                    purpose=args.purpose,
+                    owner=args.owner,
+                    default_branch=args.default_branch,
+                )
+                print(f"Registered repo {entry.id} at {_repo_location(entry)}")
+                return 0
+
+            if args.repo_command == "list":
+                entries = load_repo_entries(root / "harness.yml")
+                if not entries:
+                    print("No repositories registered.")
+                    return 0
+                for entry in entries:
+                    print(
+                        f"{entry.id}\t{_repo_location(entry)}\t"
+                        f"active={str(entry.active).lower()}\tstatus={entry.coverage_status}"
+                    )
+                return 0
+
+    except (OrgPackError, RepoRegistryError) as exc:
         print(f"error: {exc}", file=sys.stderr)
         return 1
 
     parser.error("unsupported command")
     return 2
+
+
+def _repo_location(entry: RepoEntry) -> str:
+    return entry.local_path or entry.url or "-"

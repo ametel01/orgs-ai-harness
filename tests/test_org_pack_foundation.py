@@ -16,6 +16,7 @@ from orgs_ai_harness.org_pack import (
     init_org_pack,
     resolve_default_root,
 )
+from orgs_ai_harness.repo_registry import add_repo, load_repo_entries
 from orgs_ai_harness.validation import validate_org_pack
 
 
@@ -416,6 +417,100 @@ class OrgPackFoundationTests(unittest.TestCase):
             self.assertIn("refusing to initialize", second_result.stderr)
             self.assertIn("harness org init --repo <path>", second_result.stderr)
             self.assertEqual(config_path.read_bytes(), config_before)
+
+
+class RepoRegistryTests(unittest.TestCase):
+    def cli_env(self) -> dict[str, str]:
+        env = os.environ.copy()
+        env["PYTHONPATH"] = str(Path.cwd() / "src")
+        return env
+
+    def test_add_local_repo_writes_selected_registry_entry(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            tmp_path = Path(tmp)
+            repo_path = tmp_path / "api-service"
+            repo_path.mkdir()
+            root = init_org_pack(tmp_path, "acme")
+
+            entry = add_repo(root, tmp_path, "api-service", purpose="Core backend API and auth")
+
+            self.assertEqual(entry.id, "api-service")
+            self.assertEqual(entry.local_path, "../api-service")
+            self.assertEqual(entry.coverage_status, "selected")
+            self.assertTrue(entry.active)
+            entries = load_repo_entries(root / "harness.yml")
+            self.assertEqual(len(entries), 1)
+            self.assertEqual(entries[0].purpose, "Core backend API and auth")
+            self.assertTrue(validate_org_pack(root).ok)
+
+    def test_cli_repo_add_list_and_validate(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            tmp_path = Path(tmp)
+            (tmp_path / "api-service").mkdir()
+            init_org_pack(tmp_path, "acme")
+
+            add_result = subprocess.run(
+                [
+                    sys.executable,
+                    "-m",
+                    "orgs_ai_harness",
+                    "repo",
+                    "add",
+                    "api-service",
+                    "--purpose",
+                    "Core backend API and auth",
+                ],
+                cwd=tmp,
+                env=self.cli_env(),
+                text=True,
+                capture_output=True,
+                check=False,
+            )
+
+            self.assertEqual(add_result.returncode, 0, add_result.stderr)
+            self.assertIn("Registered repo api-service", add_result.stdout)
+
+            list_result = subprocess.run(
+                [sys.executable, "-m", "orgs_ai_harness", "repo", "list"],
+                cwd=tmp,
+                env=self.cli_env(),
+                text=True,
+                capture_output=True,
+                check=False,
+            )
+
+            self.assertEqual(list_result.returncode, 0, list_result.stderr)
+            self.assertIn("api-service", list_result.stdout)
+            self.assertIn("../api-service", list_result.stdout)
+            self.assertIn("active=true", list_result.stdout)
+            self.assertIn("status=selected", list_result.stdout)
+
+            validate_result = subprocess.run(
+                [sys.executable, "-m", "orgs_ai_harness", "validate"],
+                cwd=tmp,
+                env=self.cli_env(),
+                text=True,
+                capture_output=True,
+                check=False,
+            )
+
+            self.assertEqual(validate_result.returncode, 0, validate_result.stderr)
+
+    def test_cli_repo_add_rejects_missing_local_path(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            init_org_pack(Path(tmp), "acme")
+
+            add_result = subprocess.run(
+                [sys.executable, "-m", "orgs_ai_harness", "repo", "add", "missing-service"],
+                cwd=tmp,
+                env=self.cli_env(),
+                text=True,
+                capture_output=True,
+                check=False,
+            )
+
+            self.assertNotEqual(add_result.returncode, 0)
+            self.assertIn("repo path does not exist", add_result.stderr)
 
 
 if __name__ == "__main__":
