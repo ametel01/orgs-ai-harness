@@ -39,6 +39,7 @@ def add_repo(
     purpose: str | None = None,
     owner: str | None = None,
     default_branch: str | None = "main",
+    external: bool = False,
 ) -> RepoEntry:
     """Register a local or remote repository in the org pack."""
 
@@ -61,11 +62,11 @@ def add_repo(
             url=raw_value,
             default_branch=_normalize_optional(default_branch),
             local_path=None,
-            coverage_status="selected",
-            active=True,
+            coverage_status=_initial_coverage_status(external),
+            active=not external,
             deactivation_reason=None,
             pack_ref=None,
-            external=False,
+            external=external,
         )
         save_repo_entries(root / "harness.yml", (*entries, entry))
         return entry
@@ -87,11 +88,11 @@ def add_repo(
         url=None,
         default_branch=_normalize_optional(default_branch),
         local_path=_relative_path(repo_path, root),
-        coverage_status="selected",
-        active=True,
+        coverage_status=_initial_coverage_status(external),
+        active=not external,
         deactivation_reason=None,
         pack_ref=None,
-        external=False,
+        external=external,
     )
     save_repo_entries(root / "harness.yml", (*entries, entry))
     return entry
@@ -437,3 +438,9 @@ def _normalize_optional(value: str | None) -> str | None:
         return None
     normalized = value.strip()
     return normalized or None
+
+
+def _initial_coverage_status(external: bool) -> str:
+    if external:
+        return "external"
+    return "selected"

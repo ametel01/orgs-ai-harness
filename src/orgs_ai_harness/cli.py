@@ -42,6 +42,7 @@ def build_parser() -> argparse.ArgumentParser:
     repo_add.add_argument("--purpose", help="Why this repository is covered")
     repo_add.add_argument("--owner", help="Owning team or person")
     repo_add.add_argument("--default-branch", default="main", help="Default branch name")
+    repo_add.add_argument("--external", action="store_true", help="Mark as an external dependency reference")
     repo_set_path = repo_subparsers.add_parser("set-path", help="Repair a registered local repository path")
     repo_set_path.add_argument("repo_id", help="Registered repo id")
     repo_set_path.add_argument("path", help="New local repository path")
@@ -107,6 +108,7 @@ def main(argv: list[str] | None = None) -> int:
                     purpose=args.purpose,
                     owner=args.owner,
                     default_branch=args.default_branch,
+                    external=args.external,
                 )
                 print(f"Registered repo {entry.id} at {_repo_location(entry)}")
                 return 0

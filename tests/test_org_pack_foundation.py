@@ -1070,6 +1070,161 @@ class RepoRegistryTests(unittest.TestCase):
             )
             self.assertEqual(validate_result.returncode, 0, validate_result.stderr)
 
+    def test_add_external_remote_repo_marks_reference_not_selected_coverage(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            root = init_org_pack(Path(tmp), "acme")
+
+            entry = add_repo(
+                root,
+                Path(tmp),
+                "git@github.com:vendor/sdk.git",
+                owner="vendor",
+                external=True,
+            )
+
+            self.assertEqual(entry.id, "sdk")
+            self.assertEqual(entry.coverage_status, "external")
+            self.assertFalse(entry.active)
+            self.assertTrue(entry.external)
+            self.assertEqual(entry.url, "git@github.com:vendor/sdk.git")
+            self.assertIsNone(entry.local_path)
+            self.assertTrue(validate_org_pack(root).ok)
+
+    def test_add_external_local_repo_keeps_path_but_not_active_coverage(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            tmp_path = Path(tmp)
+            (tmp_path / "vendor-sdk").mkdir()
+            root = init_org_pack(tmp_path, "acme")
+
+            entry = add_repo(root, tmp_path, "vendor-sdk", owner="vendor", external=True)
+
+            self.assertEqual(entry.id, "vendor-sdk")
+            self.assertEqual(entry.local_path, "../vendor-sdk")
+            self.assertEqual(entry.coverage_status, "external")
+            self.assertFalse(entry.active)
+            self.assertTrue(entry.external)
+            self.assertTrue(validate_org_pack(root).ok)
+
+    def test_validation_rejects_selected_external_contradiction(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            root = init_org_pack(Path(tmp), "acme")
+            config_path = root / "harness.yml"
+            config_path.write_text(
+                "org:\n"
+                "  name: acme\n"
+                "  skills_version: 1\n"
+                "\n"
+                "providers: []\n"
+                "repos:\n"
+                "  - id: sdk\n"
+                "    name: sdk\n"
+                "    owner: vendor\n"
+                "    purpose: null\n"
+                "    url: git@github.com:vendor/sdk.git\n"
+                "    default_branch: main\n"
+                "    local_path: null\n"
+                "    coverage_status: selected\n"
+                "    active: true\n"
+                "    deactivation_reason: null\n"
+                "    pack_ref: null\n"
+                "    external: true\n"
+                "redaction:\n"
+                "  globs: []\n"
+                "  regexes: []\n"
+                "command_permissions: []\n",
+                encoding="utf-8",
+            )
+
+            result = validate_org_pack(root)
+
+            self.assertFalse(result.ok)
+            self.assertTrue(any("cannot be both selected coverage and external" in error for error in result.errors))
+
+    def test_validation_rejects_active_external_status(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            root = init_org_pack(Path(tmp), "acme")
+            config_path = root / "harness.yml"
+            config_path.write_text(
+                "org:\n"
+                "  name: acme\n"
+                "  skills_version: 1\n"
+                "\n"
+                "providers: []\n"
+                "repos:\n"
+                "  - id: sdk\n"
+                "    name: sdk\n"
+                "    owner: vendor\n"
+                "    purpose: null\n"
+                "    url: git@github.com:vendor/sdk.git\n"
+                "    default_branch: main\n"
+                "    local_path: null\n"
+                "    coverage_status: external\n"
+                "    active: true\n"
+                "    deactivation_reason: null\n"
+                "    pack_ref: null\n"
+                "    external: false\n"
+                "redaction:\n"
+                "  globs: []\n"
+                "  regexes: []\n"
+                "command_permissions: []\n",
+                encoding="utf-8",
+            )
+
+            result = validate_org_pack(root)
+
+            self.assertFalse(result.ok)
+            self.assertTrue(any("external coverage must set external: true" in error for error in result.errors))
+            self.assertTrue(any("external coverage must be inactive" in error for error in result.errors))
+
+    def test_cli_repo_add_external_lists_external_status_and_validates(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            init_org_pack(Path(tmp), "acme")
+
+            add_result = subprocess.run(
+                [
+                    sys.executable,
+                    "-m",
+                    "orgs_ai_harness",
+                    "repo",
+                    "add",
+                    "git@github.com:vendor/sdk.git",
+                    "--owner",
+                    "vendor",
+                    "--external",
+                ],
+                cwd=tmp,
+                env=self.cli_env(),
+                text=True,
+                capture_output=True,
+                check=False,
+            )
+            self.assertEqual(add_result.returncode, 0, add_result.stderr)
+            self.assertIn("Registered repo sdk", add_result.stdout)
+
+            list_result = subprocess.run(
+                [sys.executable, "-m", "orgs_ai_harness", "repo", "list"],
+                cwd=tmp,
+                env=self.cli_env(),
+                text=True,
+                capture_output=True,
+                check=False,
+            )
+            self.assertEqual(list_result.returncode, 0, list_result.stderr)
+            self.assertIn("sdk", list_result.stdout)
+            self.assertIn("git@github.com:vendor/sdk.git", list_result.stdout)
+            self.assertIn("active=false", list_result.stdout)
+            self.assertIn("status=external", list_result.stdout)
+
+            validate_result = subprocess.run(
+                [sys.executable, "-m", "orgs_ai_harness", "validate"],
+                cwd=tmp,
+                env=self.cli_env(),
+                text=True,
+                capture_output=True,
+                check=False,
+            )
+            self.assertEqual(validate_result.returncode, 0, validate_result.stderr)
+
 
 if __name__ == "__main__":
     unittest.main()

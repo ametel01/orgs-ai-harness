@@ -109,6 +109,7 @@ def _validate_minimum_config(config_text: str) -> list[str]:
                         entry.active,
                         entry.local_path,
                         entry.deactivation_reason,
+                        entry.external,
                     )
                 )
 
@@ -129,6 +130,7 @@ def _validate_repo_entry(
     active: bool,
     local_path: str | None,
     deactivation_reason: str | None,
+    external: bool,
 ) -> list[str]:
     errors: list[str] = []
 
@@ -137,18 +139,27 @@ def _validate_repo_entry(
             f"harness.yml repo id is invalid: {repo_id} "
             "(use letters, numbers, dots, underscores, or hyphens)"
         )
-    if coverage_status not in {"selected", "deactivated"}:
+    if coverage_status not in {"selected", "deactivated", "external"}:
         errors.append(
             f"harness.yml repo {repo_id} has invalid coverage_status: {coverage_status} "
-            "(supported values: selected, deactivated)"
+            "(supported values: selected, deactivated, external)"
         )
     if coverage_status == "selected" and not active:
         errors.append(f"harness.yml repo {repo_id} with selected coverage must be active")
+    if coverage_status == "selected" and external:
+        errors.append(f"harness.yml repo {repo_id} cannot be both selected coverage and external")
     if coverage_status == "deactivated":
         if active:
             errors.append(f"harness.yml repo {repo_id} with deactivated coverage must be inactive")
         if deactivation_reason is None or not deactivation_reason.strip():
             errors.append(f"harness.yml repo {repo_id} with deactivated coverage must include deactivation_reason")
+        if external:
+            errors.append(f"harness.yml repo {repo_id} cannot be both deactivated coverage and external")
+    if coverage_status == "external":
+        if not external:
+            errors.append(f"harness.yml repo {repo_id} with external coverage must set external: true")
+        if active:
+            errors.append(f"harness.yml repo {repo_id} with external coverage must be inactive")
     if local_path is not None and Path(local_path).is_absolute():
         errors.append(f"harness.yml repo {repo_id} local_path must be relative to the org pack root")
 
