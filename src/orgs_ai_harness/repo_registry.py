@@ -39,15 +39,35 @@ def add_repo(
     owner: str | None = None,
     default_branch: str | None = "main",
 ) -> RepoEntry:
-    """Register a local repository in the org pack."""
+    """Register a local or remote repository in the org pack."""
 
     raw_value = path_or_url.strip()
     if not raw_value:
         raise RepoRegistryError("repo path or URL cannot be empty")
-    if looks_like_remote_url(raw_value):
-        raise RepoRegistryError("remote repo URL registration is not available yet")
 
     root = root.resolve()
+    entries = load_repo_entries(root / "harness.yml")
+
+    if looks_like_remote_url(raw_value):
+        repo_name = derive_repo_name_from_url(raw_value)
+        repo_id = _normalize_repo_id(repo_name)
+        _ensure_unique_repo_id(entries, repo_id)
+        entry = RepoEntry(
+            id=repo_id,
+            name=repo_name,
+            owner=_normalize_optional(owner),
+            purpose=_normalize_optional(purpose),
+            url=raw_value,
+            default_branch=_normalize_optional(default_branch),
+            local_path=None,
+            coverage_status="selected",
+            active=True,
+            pack_ref=None,
+            external=False,
+        )
+        save_repo_entries(root / "harness.yml", (*entries, entry))
+        return entry
+
     repo_path = _resolve_user_path(cwd, raw_value)
     if not repo_path.exists():
         raise RepoRegistryError(f"repo path does not exist: {repo_path}")
@@ -55,7 +75,6 @@ def add_repo(
         raise RepoRegistryError(f"repo path is not a directory: {repo_path}")
 
     repo_id = derive_repo_id_from_path(repo_path)
-    entries = load_repo_entries(root / "harness.yml")
     _ensure_unique_repo_id(entries, repo_id)
 
     entry = RepoEntry(
@@ -167,6 +186,22 @@ def render_repo_block(entries: tuple[RepoEntry, ...]) -> ConfigBlock:
 def derive_repo_id_from_path(path: Path) -> str:
     name = path.name.removesuffix(".git")
     return _normalize_repo_id(name)
+
+
+def derive_repo_name_from_url(url: str) -> str:
+    cleaned = url.strip().rstrip("/")
+    if not cleaned:
+        raise RepoRegistryError("repo URL cannot be empty")
+
+    if cleaned.startswith("git@") and ":" in cleaned:
+        cleaned = cleaned.rsplit(":", 1)[1]
+    else:
+        cleaned = cleaned.rsplit("/", 1)[-1]
+
+    name = cleaned.rsplit("/", 1)[-1].removesuffix(".git")
+    if not name:
+        raise RepoRegistryError(f"cannot derive repo name from URL: {url}")
+    return name
 
 
 def looks_like_remote_url(value: str) -> bool:

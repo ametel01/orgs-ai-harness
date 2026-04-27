@@ -512,6 +512,75 @@ class RepoRegistryTests(unittest.TestCase):
             self.assertNotEqual(add_result.returncode, 0)
             self.assertIn("repo path does not exist", add_result.stderr)
 
+    def test_add_remote_ssh_url_writes_registry_entry_without_local_path(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            root = init_org_pack(Path(tmp), "acme")
+
+            entry = add_repo(
+                root,
+                Path(tmp),
+                "git@github.com:acme/web-app.git",
+                owner="product-engineering",
+            )
+
+            self.assertEqual(entry.id, "web-app")
+            self.assertEqual(entry.name, "web-app")
+            self.assertEqual(entry.owner, "product-engineering")
+            self.assertEqual(entry.url, "git@github.com:acme/web-app.git")
+            self.assertIsNone(entry.local_path)
+            self.assertEqual(entry.coverage_status, "selected")
+            self.assertTrue(validate_org_pack(root).ok)
+
+    def test_cli_repo_add_remote_https_url_lists_url_and_validates(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            init_org_pack(Path(tmp), "acme")
+
+            add_result = subprocess.run(
+                [
+                    sys.executable,
+                    "-m",
+                    "orgs_ai_harness",
+                    "repo",
+                    "add",
+                    "https://github.com/acme/web-app.git",
+                    "--owner",
+                    "product-engineering",
+                ],
+                cwd=tmp,
+                env=self.cli_env(),
+                text=True,
+                capture_output=True,
+                check=False,
+            )
+
+            self.assertEqual(add_result.returncode, 0, add_result.stderr)
+            self.assertIn("Registered repo web-app", add_result.stdout)
+
+            list_result = subprocess.run(
+                [sys.executable, "-m", "orgs_ai_harness", "repo", "list"],
+                cwd=tmp,
+                env=self.cli_env(),
+                text=True,
+                capture_output=True,
+                check=False,
+            )
+
+            self.assertEqual(list_result.returncode, 0, list_result.stderr)
+            self.assertIn("web-app", list_result.stdout)
+            self.assertIn("https://github.com/acme/web-app.git", list_result.stdout)
+            self.assertIn("status=selected", list_result.stdout)
+
+            validate_result = subprocess.run(
+                [sys.executable, "-m", "orgs_ai_harness", "validate"],
+                cwd=tmp,
+                env=self.cli_env(),
+                text=True,
+                capture_output=True,
+                check=False,
+            )
+
+            self.assertEqual(validate_result.returncode, 0, validate_result.stderr)
+
 
 if __name__ == "__main__":
     unittest.main()
