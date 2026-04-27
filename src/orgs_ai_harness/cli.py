@@ -23,6 +23,7 @@ from orgs_ai_harness.repo_registry import (
 )
 from orgs_ai_harness.repo_discovery import (
     RepoDiscoveryError,
+    clone_discovered_repos,
     discover_github_org,
     discover_github_user,
     filter_discovered_repos,
@@ -57,6 +58,8 @@ def build_parser() -> argparse.ArgumentParser:
     repo_discover.add_argument("--select", help="Comma-separated discovered repo ids or names to register")
     repo_discover.add_argument("--include-archived", action="store_true", help="Include archived repositories")
     repo_discover.add_argument("--include-forks", action="store_true", help="Include fork repositories")
+    repo_discover.add_argument("--clone", action="store_true", help="Clone selected repositories")
+    repo_discover.add_argument("--clone-dir", help="Directory where selected repositories should be cloned")
     repo_set_path = repo_subparsers.add_parser("set-path", help="Repair a registered local repository path")
     repo_set_path.add_argument("repo_id", help="Registered repo id")
     repo_set_path.add_argument("path", help="New local repository path")
@@ -145,7 +148,10 @@ def main(argv: list[str] | None = None) -> int:
                 )
                 filtered_out = tuple(repo for repo in discovered if repo not in filtered)
                 selected = select_discovered_repos(filtered, args.select, filtered_out=filtered_out)
-                entries = register_discovered_repos(root, selected)
+                local_paths = None
+                if args.clone:
+                    local_paths = clone_discovered_repos(root, Path.cwd(), selected, args.clone_dir)
+                entries = register_discovered_repos(root, selected, local_paths=local_paths)
                 for entry in entries:
                     print(f"Registered repo {entry.id} at {_repo_location(entry)}")
                 return 0

@@ -4,6 +4,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 import json
+import os
 from pathlib import Path
 import shutil
 import subprocess
@@ -113,10 +114,49 @@ def select_discovered_repos(
     return tuple(selected)
 
 
-def register_discovered_repos(root: Path, selected: tuple[DiscoveredRepo, ...]) -> tuple[RepoEntry, ...]:
+def clone_discovered_repos(
+    root: Path,
+    cwd: Path,
+    selected: tuple[DiscoveredRepo, ...],
+    clone_dir: str | None,
+) -> dict[str, str]:
+    """Clone selected repos and return registry-ready local paths keyed by repo id."""
+
+    if shutil.which("git") is None:
+        raise RepoDiscoveryError("git is required for --clone but was not found on PATH")
+
+    clone_root = _resolve_clone_root(cwd, clone_dir)
+    local_paths: dict[str, str] = {}
+    for repo in selected:
+        destination = (clone_root / repo.id).resolve()
+        if destination.exists():
+            raise RepoDiscoveryError(f"clone destination already exists for {repo.id}: {destination}")
+        destination.parent.mkdir(parents=True, exist_ok=True)
+        result = subprocess.run(
+            ["git", "clone", repo.url, str(destination)],
+            text=True,
+            capture_output=True,
+            check=False,
+        )
+        if result.returncode != 0:
+            message = result.stderr.strip() or result.stdout.strip() or "unknown git failure"
+            raise RepoDiscoveryError(f"git clone failed for {repo.id}: {message}")
+        if not destination.is_dir():
+            raise RepoDiscoveryError(f"git clone did not create expected directory for {repo.id}: {destination}")
+        local_paths[repo.id] = _relative_path(destination, root.resolve())
+    return local_paths
+
+
+def register_discovered_repos(
+    root: Path,
+    selected: tuple[DiscoveredRepo, ...],
+    *,
+    local_paths: dict[str, str] | None = None,
+) -> tuple[RepoEntry, ...]:
     """Write selected discovered repos to the existing repo registry."""
 
-    entries = tuple(_repo_entry_from_discovered(repo) for repo in selected)
+    paths = local_paths or {}
+    entries = tuple(_repo_entry_from_discovered(repo, local_path=paths.get(repo.id)) for repo in selected)
     try:
         return add_repo_entries(root, entries)
     except RepoRegistryError as exc:
@@ -175,7 +215,7 @@ def _discovered_repo_from_gh(record: object) -> DiscoveredRepo:
     )
 
 
-def _repo_entry_from_discovered(repo: DiscoveredRepo) -> RepoEntry:
+def _repo_entry_from_discovered(repo: DiscoveredRepo, *, local_path: str | None = None) -> RepoEntry:
     return RepoEntry(
         id=repo.id,
         name=repo.name,
@@ -183,13 +223,27 @@ def _repo_entry_from_discovered(repo: DiscoveredRepo) -> RepoEntry:
         purpose=None,
         url=repo.url,
         default_branch=repo.default_branch,
-        local_path=None,
+        local_path=local_path,
         coverage_status="selected",
         active=True,
         deactivation_reason=None,
         pack_ref=None,
         external=False,
     )
+
+
+def _resolve_clone_root(cwd: Path, clone_dir: str | None) -> Path:
+    raw_value = clone_dir.strip() if clone_dir is not None else "covered-repos"
+    if not raw_value:
+        raise RepoDiscoveryError("--clone-dir cannot be empty")
+    path = Path(raw_value).expanduser()
+    if not path.is_absolute():
+        path = cwd.resolve() / path
+    return path.resolve()
+
+
+def _relative_path(path: Path, root: Path) -> str:
+    return Path(os.path.relpath(path, root)).as_posix()
 
 
 def _required_string(record: dict[str, object], field: str) -> str:

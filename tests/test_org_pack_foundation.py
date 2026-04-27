@@ -442,7 +442,7 @@ class RepoRegistryTests(unittest.TestCase):
         return env
 
     def write_fake_gh(self, fake_bin: Path, payload: str, target: str = "acme") -> None:
-        fake_bin.mkdir()
+        fake_bin.mkdir(exist_ok=True)
         gh_path = fake_bin / "gh"
         gh_path.write_text(
             "#!/usr/bin/env python3\n"
@@ -456,6 +456,26 @@ class RepoRegistryTests(unittest.TestCase):
             encoding="utf-8",
         )
         gh_path.chmod(0o755)
+
+    def write_fake_git(self, fake_bin: Path, log_path: Path) -> None:
+        fake_bin.mkdir(exist_ok=True)
+        git_path = fake_bin / "git"
+        git_path.write_text(
+            "#!/usr/bin/env python3\n"
+            "from pathlib import Path\n"
+            "import sys\n"
+            f"log_path = Path({str(log_path)!r})\n"
+            "if len(sys.argv) != 4 or sys.argv[1] != 'clone':\n"
+            "    print('unexpected git args: ' + ' '.join(sys.argv[1:]), file=sys.stderr)\n"
+            "    raise SystemExit(2)\n"
+            "destination = Path(sys.argv[3])\n"
+            "destination.mkdir(parents=True)\n"
+            "log_path.write_text(log_path.read_text(encoding='utf-8') if log_path.exists() else '', encoding='utf-8')\n"
+            "with log_path.open('a', encoding='utf-8') as handle:\n"
+            "    handle.write(sys.argv[2] + ' -> ' + str(destination) + '\\n')\n",
+            encoding="utf-8",
+        )
+        git_path.chmod(0o755)
 
     def test_add_local_repo_writes_selected_registry_entry(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
@@ -855,6 +875,99 @@ class RepoRegistryTests(unittest.TestCase):
 
             self.assertNotEqual(discover_result.returncode, 0)
             self.assertIn("requires --select in non-interactive use", discover_result.stderr)
+
+    def test_cli_repo_discover_clone_records_selected_local_path(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            tmp_path = Path(tmp)
+            init_org_pack(tmp_path, "acme")
+            payload = (
+                '[{"name":"api-service","owner":{"login":"acme"},'
+                '"url":"https://github.com/acme/api-service",'
+                '"defaultBranchRef":{"name":"main"},"visibility":"PRIVATE",'
+                '"isArchived":false,"isFork":false,"description":null},'
+                '{"name":"web-app","owner":{"login":"acme"},'
+                '"url":"https://github.com/acme/web-app",'
+                '"defaultBranchRef":{"name":"main"},"visibility":"PUBLIC",'
+                '"isArchived":false,"isFork":false,"description":null}]'
+            )
+            fake_bin = tmp_path / "fake-bin"
+            clone_log = tmp_path / "clone.log"
+            self.write_fake_gh(fake_bin, payload)
+            self.write_fake_git(fake_bin, clone_log)
+
+            discover_result = subprocess.run(
+                [
+                    sys.executable,
+                    "-m",
+                    "orgs_ai_harness",
+                    "repo",
+                    "discover",
+                    "--github-org",
+                    "acme",
+                    "--select",
+                    "api-service",
+                    "--clone",
+                    "--clone-dir",
+                    "./covered-repos",
+                ],
+                cwd=tmp,
+                env=self.cli_env_with_fake_gh(fake_bin),
+                text=True,
+                capture_output=True,
+                check=False,
+            )
+
+            self.assertEqual(discover_result.returncode, 0, discover_result.stderr)
+            self.assertTrue((tmp_path / "covered-repos" / "api-service").is_dir())
+            self.assertFalse((tmp_path / "covered-repos" / "web-app").exists())
+            self.assertIn("https://github.com/acme/api-service", clone_log.read_text(encoding="utf-8"))
+            self.assertNotIn("https://github.com/acme/web-app", clone_log.read_text(encoding="utf-8"))
+            root = tmp_path / DEFAULT_PACK_DIR
+            entries = load_repo_entries(root / "harness.yml")
+            self.assertEqual(len(entries), 1)
+            self.assertEqual(entries[0].local_path, "../covered-repos/api-service")
+            self.assertTrue(validate_org_pack(root).ok)
+
+    def test_cli_repo_discover_clone_uses_default_destination(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            tmp_path = Path(tmp)
+            init_org_pack(tmp_path, "acme")
+            payload = (
+                '[{"name":"api-service","owner":{"login":"acme"},'
+                '"url":"https://github.com/acme/api-service",'
+                '"defaultBranchRef":{"name":"main"},"visibility":"PRIVATE",'
+                '"isArchived":false,"isFork":false,"description":null}]'
+            )
+            fake_bin = tmp_path / "fake-bin"
+            clone_log = tmp_path / "clone.log"
+            self.write_fake_gh(fake_bin, payload)
+            self.write_fake_git(fake_bin, clone_log)
+
+            discover_result = subprocess.run(
+                [
+                    sys.executable,
+                    "-m",
+                    "orgs_ai_harness",
+                    "repo",
+                    "discover",
+                    "--github-org",
+                    "acme",
+                    "--select",
+                    "api-service",
+                    "--clone",
+                ],
+                cwd=tmp,
+                env=self.cli_env_with_fake_gh(fake_bin),
+                text=True,
+                capture_output=True,
+                check=False,
+            )
+
+            self.assertEqual(discover_result.returncode, 0, discover_result.stderr)
+            self.assertTrue((tmp_path / "covered-repos" / "api-service").is_dir())
+            root = tmp_path / DEFAULT_PACK_DIR
+            entries = load_repo_entries(root / "harness.yml")
+            self.assertEqual(entries[0].local_path, "../covered-repos/api-service")
 
     def test_add_remote_ssh_url_writes_registry_entry_without_local_path(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
