@@ -28,6 +28,7 @@ from orgs_ai_harness.repo_registry import (
     save_repo_entries,
     set_repo_path,
 )
+from orgs_ai_harness.repo_onboarding import is_sensitive_path
 from orgs_ai_harness.validation import validate_org_pack
 
 
@@ -40,6 +41,13 @@ def create_basic_fixture_repo(root: Path, name: str = "fixture-repo") -> Path:
         encoding="utf-8",
     )
     return repo_path
+
+
+def create_sensitive_fixture_files(repo_path: Path) -> None:
+    (repo_path / ".env").write_text("SECRET_TOKEN=do-not-leak\n", encoding="utf-8")
+    (repo_path / ".env.production").write_text("PROD_SECRET=do-not-leak-prod\n", encoding="utf-8")
+    (repo_path / "private.pem").write_text("PRIVATE KEY do-not-leak-key\n", encoding="utf-8")
+    (repo_path / "config.local.json").write_text('{"token":"do-not-leak-local"}\n', encoding="utf-8")
 
 
 class OrgPackFoundationTests(unittest.TestCase):
@@ -1950,6 +1958,43 @@ class RepoOnboardingTests(unittest.TestCase):
             self.assertIn("repo id is not registered: api-service,web-app", scan_result.stderr)
             self.assertFalse((tmp_path / DEFAULT_PACK_DIR / "repos" / "api-service").exists())
             self.assertFalse((tmp_path / DEFAULT_PACK_DIR / "repos" / "web-app").exists())
+
+    def test_sensitive_path_detection_policy(self) -> None:
+        self.assertTrue(is_sensitive_path(".env"))
+        self.assertTrue(is_sensitive_path(".env.production"))
+        self.assertTrue(is_sensitive_path("private.pem"))
+        self.assertTrue(is_sensitive_path("config.local.json"))
+        self.assertTrue(is_sensitive_path("secrets/api-token.txt"))
+        self.assertTrue(is_sensitive_path("id_rsa"))
+        self.assertFalse(is_sensitive_path("README.md"))
+        self.assertFalse(is_sensitive_path("package.json"))
+
+    def test_cli_onboard_skips_sensitive_files_without_leaking_contents(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            tmp_path = Path(tmp)
+            repo_path = create_basic_fixture_repo(tmp_path)
+            create_sensitive_fixture_files(repo_path)
+            init_org_pack(tmp_path, "acme")
+            self.assertEqual(self.run_cli(tmp_path, "repo", "add", "fixture-repo").returncode, 0)
+
+            scan_result = self.run_cli(tmp_path, "onboard", "fixture-repo", "--scan-only")
+
+            self.assertEqual(scan_result.returncode, 0, scan_result.stderr)
+            artifact_root = tmp_path / DEFAULT_PACK_DIR / "repos" / "fixture-repo"
+            artifact_text = "\n".join(
+                path.read_text(encoding="utf-8") for path in artifact_root.rglob("*") if path.is_file()
+            )
+            self.assertIn('"path": ".env"', artifact_text)
+            self.assertIn('"path": ".env.production"', artifact_text)
+            self.assertIn('"path": "private.pem"', artifact_text)
+            self.assertIn('"path": "config.local.json"', artifact_text)
+            self.assertIn('"reason": "sensitive filename policy"', artifact_text)
+            self.assertIn('"path": "README.md"', artifact_text)
+            self.assertNotIn("do-not-leak", artifact_text)
+
+            validate_result = self.run_cli(tmp_path, "validate", "fixture-repo")
+
+            self.assertEqual(validate_result.returncode, 0, validate_result.stderr)
 
 
 if __name__ == "__main__":

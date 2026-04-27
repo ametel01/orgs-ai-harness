@@ -28,6 +28,8 @@ SAFE_EVIDENCE_FILES = {
     "package.json": "package_manifest",
     "pyproject.toml": "package_manifest",
 }
+SENSITIVE_SUFFIXES = (".pem", ".key", ".p12", ".pfx")
+SENSITIVE_NAME_PARTS = ("credential", "credentials", "secret", "secrets", "token", "tokens")
 
 
 def scan_repo_only(root: Path, repo_id: str) -> OnboardingResult:
@@ -37,7 +39,7 @@ def scan_repo_only(root: Path, repo_id: str) -> OnboardingResult:
     entry = _find_repo(root, repo_id)
     repo_path = _resolve_repo_path(root, entry)
 
-    scanned = _scan_safe_evidence(repo_path)
+    scanned, skipped = _scan_repo(repo_path)
     unknowns = _default_unknowns(scanned)
 
     artifact_root = root / "repos" / entry.id
@@ -56,7 +58,7 @@ def scan_repo_only(root: Path, repo_id: str) -> OnboardingResult:
                 "repo_id": entry.id,
                 "repo_path": entry.local_path,
                 "scanned_paths": scanned,
-                "skipped_paths": [],
+                "skipped_paths": skipped,
             },
             indent=2,
         )
@@ -104,11 +106,37 @@ def _resolve_repo_path(root: Path, entry: RepoEntry) -> Path:
     return repo_path
 
 
-def _scan_safe_evidence(repo_path: Path) -> list[dict[str, str | int]]:
+def is_sensitive_path(relative_path: str) -> bool:
+    """Return whether a repository path must be skipped as sensitive."""
+
+    path = Path(relative_path)
+    name = path.name.lower()
+    stem = path.stem.lower()
+    if name == ".env" or name.startswith(".env."):
+        return True
+    if name.endswith(SENSITIVE_SUFFIXES):
+        return True
+    if name.endswith(".local") or ".local." in name:
+        return True
+    if any(part in name for part in SENSITIVE_NAME_PARTS):
+        return True
+    if stem in {"id_rsa", "id_dsa", "id_ecdsa", "id_ed25519"}:
+        return True
+    return False
+
+
+def _scan_repo(repo_path: Path) -> tuple[list[dict[str, str | int]], list[dict[str, str]]]:
     scanned: list[dict[str, str | int]] = []
-    for relative, category in SAFE_EVIDENCE_FILES.items():
-        path = repo_path / relative
+    skipped: list[dict[str, str]] = []
+    for path in sorted(repo_path.rglob("*")):
         if not path.is_file():
+            continue
+        relative = path.relative_to(repo_path).as_posix()
+        if is_sensitive_path(relative):
+            skipped.append({"path": relative, "reason": "sensitive filename policy"})
+            continue
+        category = _evidence_category(relative)
+        if category is None:
             continue
         content = path.read_text(encoding="utf-8", errors="replace")
         scanned.append(
@@ -118,7 +146,11 @@ def _scan_safe_evidence(repo_path: Path) -> list[dict[str, str | int]]:
                 "bytes": len(content.encode("utf-8")),
             }
         )
-    return scanned
+    return scanned, skipped
+
+
+def _evidence_category(relative_path: str) -> str | None:
+    return SAFE_EVIDENCE_FILES.get(relative_path)
 
 
 def _default_unknowns(scanned: list[dict[str, str | int]]) -> list[dict[str, object]]:
@@ -163,6 +195,14 @@ def _render_summary(
             lines.append(f"- `{item['path']}` ({item['category']}, {item['bytes']} bytes)")
     else:
         lines.append("- No safe evidence files found in the initial scan set.")
+    lines.extend(
+        [
+            "",
+            "## Skipped Paths",
+            "",
+            "- Sensitive paths are recorded in the scan manifest and their contents were not read.",
+        ]
+    )
     lines.extend(
         [
             "",
