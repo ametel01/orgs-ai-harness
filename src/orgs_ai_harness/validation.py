@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
+import json
 from pathlib import Path
 import re
 
@@ -65,6 +66,36 @@ def validate_org_pack(root: Path) -> ValidationResult:
     return ValidationResult(tuple(errors))
 
 
+def validate_repo_onboarding(root: Path, repo_id: str) -> ValidationResult:
+    """Validate the minimum scan-only artifact contract for one repo."""
+
+    root = root.resolve()
+    normalized_repo_id = repo_id.strip()
+    if not normalized_repo_id:
+        return ValidationResult(("repo id cannot be empty",))
+
+    errors: list[str] = list(validate_org_pack(root).errors)
+    artifact_root = root / "repos" / normalized_repo_id
+    summary_path = artifact_root / "onboarding-summary.md"
+    unknowns_path = artifact_root / "unknowns.yml"
+    manifest_path = artifact_root / "scan" / "scan-manifest.yml"
+
+    if not summary_path.is_file():
+        errors.append(f"missing onboarding summary: {summary_path.relative_to(root)}")
+    elif not summary_path.read_text(encoding="utf-8").strip():
+        errors.append(f"onboarding summary is empty: {summary_path.relative_to(root)}")
+
+    unknowns = _load_json_artifact(unknowns_path, "unknowns", errors, root)
+    if isinstance(unknowns, dict):
+        _validate_unknowns_artifact(unknowns, unknowns_path, root, errors)
+
+    manifest = _load_json_artifact(manifest_path, "scan manifest", errors, root)
+    if isinstance(manifest, dict):
+        _validate_scan_manifest_artifact(manifest, manifest_path, root, errors)
+
+    return ValidationResult(tuple(errors))
+
+
 def _validate_minimum_config(config_text: str) -> list[str]:
     errors: list[str] = []
     blocks = {block.key: block for block in split_top_level_blocks(config_text)}
@@ -122,6 +153,49 @@ def _validate_minimum_config(config_text: str) -> list[str]:
         errors.append("harness.yml missing required field: redaction.regexes (add '  regexes: []')")
 
     return errors
+
+
+def _load_json_artifact(path: Path, label: str, errors: list[str], root: Path) -> object | None:
+    if not path.is_file():
+        errors.append(f"missing {label}: {path.relative_to(root)}")
+        return None
+    try:
+        return json.loads(path.read_text(encoding="utf-8"))
+    except json.JSONDecodeError as exc:
+        errors.append(f"{label} is malformed: {path.relative_to(root)} ({exc.msg})")
+        return None
+
+
+def _validate_unknowns_artifact(artifact: dict[str, object], path: Path, root: Path, errors: list[str]) -> None:
+    unknowns = artifact.get("unknowns")
+    if not isinstance(unknowns, list):
+        errors.append(f"unknowns.yml field unknowns must be a list: {path.relative_to(root)}")
+        return
+    for index, unknown in enumerate(unknowns, start=1):
+        if not isinstance(unknown, dict):
+            errors.append(f"unknowns.yml item {index} must be an object: {path.relative_to(root)}")
+            continue
+        for field in ("id", "question", "why_it_matters", "severity", "status", "recommended_investigation"):
+            if not isinstance(unknown.get(field), str) or not str(unknown.get(field)).strip():
+                errors.append(f"unknowns.yml item {index} field {field} must be a non-empty string")
+        if unknown.get("severity") not in {"blocking", "important", "minor"}:
+            errors.append(f"unknowns.yml item {index} has invalid severity: {unknown.get('severity')}")
+        if unknown.get("status") not in {"open", "closed"}:
+            errors.append(f"unknowns.yml item {index} has invalid status: {unknown.get('status')}")
+        evidence = unknown.get("evidence")
+        if not isinstance(evidence, list):
+            errors.append(f"unknowns.yml item {index} field evidence must be a list")
+
+
+def _validate_scan_manifest_artifact(artifact: dict[str, object], path: Path, root: Path, errors: list[str]) -> None:
+    if not isinstance(artifact.get("repo_id"), str) or not str(artifact.get("repo_id")).strip():
+        errors.append(f"scan manifest field repo_id must be a non-empty string: {path.relative_to(root)}")
+    scanned_paths = artifact.get("scanned_paths")
+    skipped_paths = artifact.get("skipped_paths")
+    if not isinstance(scanned_paths, list):
+        errors.append(f"scan manifest field scanned_paths must be a list: {path.relative_to(root)}")
+    if not isinstance(skipped_paths, list):
+        errors.append(f"scan manifest field skipped_paths must be a list: {path.relative_to(root)}")
 
 
 def _validate_repo_entry(

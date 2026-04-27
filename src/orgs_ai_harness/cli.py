@@ -30,7 +30,8 @@ from orgs_ai_harness.repo_discovery import (
     register_discovered_repos,
     select_discovered_repos,
 )
-from orgs_ai_harness.validation import validate_org_pack
+from orgs_ai_harness.repo_onboarding import RepoOnboardingError, scan_repo_only
+from orgs_ai_harness.validation import validate_org_pack, validate_repo_onboarding
 
 
 def build_parser() -> argparse.ArgumentParser:
@@ -72,7 +73,12 @@ def build_parser() -> argparse.ArgumentParser:
     repo_remove.add_argument("--force", action="store_true", help="Remove even when onboarding metadata exists")
     repo_subparsers.add_parser("list", help="List registered repositories")
 
-    subparsers.add_parser("validate", help="Validate the org skill pack")
+    onboard_parser = subparsers.add_parser("onboard", help="Run repository onboarding")
+    onboard_parser.add_argument("repo_id", help="Registered repo id to onboard")
+    onboard_parser.add_argument("--scan-only", action="store_true", help="Only scan and summarize the repository")
+
+    validate_parser = subparsers.add_parser("validate", help="Validate the org skill pack")
+    validate_parser.add_argument("repo_id", nargs="?", help="Optional repo id for repo-specific artifacts")
 
     return parser
 
@@ -107,13 +113,27 @@ def main(argv: list[str] | None = None) -> int:
 
         if args.command == "validate":
             root = resolve_default_root(Path.cwd())
-            result = validate_org_pack(root)
+            if args.repo_id is None:
+                result = validate_org_pack(root)
+            else:
+                result = validate_repo_onboarding(root, args.repo_id)
             if result.ok:
-                print(f"Validation passed for {root}")
+                if args.repo_id is None:
+                    print(f"Validation passed for {root}")
+                else:
+                    print(f"Validation passed for {args.repo_id} at {root}")
                 return 0
             for error in result.errors:
                 print(f"error: {error}", file=sys.stderr)
             return 1
+
+        if args.command == "onboard":
+            root = resolve_default_root(Path.cwd())
+            if not args.scan_only:
+                raise RepoOnboardingError("onboard requires --scan-only in Sprint 04")
+            result = scan_repo_only(root, args.repo_id)
+            print(f"Scanned repo {result.repo_id} into {result.artifact_root}")
+            return 0
 
         if args.command == "repo":
             root = resolve_default_root(Path.cwd())
@@ -183,7 +203,7 @@ def main(argv: list[str] | None = None) -> int:
                     )
                 return 0
 
-    except (OrgPackError, RepoRegistryError, RepoDiscoveryError) as exc:
+    except (OrgPackError, RepoRegistryError, RepoDiscoveryError, RepoOnboardingError) as exc:
         print(f"error: {exc}", file=sys.stderr)
         return 1
 

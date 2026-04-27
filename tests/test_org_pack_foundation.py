@@ -31,6 +31,17 @@ from orgs_ai_harness.repo_registry import (
 from orgs_ai_harness.validation import validate_org_pack
 
 
+def create_basic_fixture_repo(root: Path, name: str = "fixture-repo") -> Path:
+    repo_path = root / name
+    repo_path.mkdir()
+    (repo_path / "README.md").write_text("# Fixture Repo\n\nService notes.\n", encoding="utf-8")
+    (repo_path / "package.json").write_text(
+        '{"scripts":{"test":"pytest"},"dependencies":{"fastapi":"latest"}}\n',
+        encoding="utf-8",
+    )
+    return repo_path
+
+
 class OrgPackFoundationTests(unittest.TestCase):
     def cli_env(self) -> dict[str, str]:
         env = os.environ.copy()
@@ -1791,6 +1802,79 @@ class RepoRegistryTests(unittest.TestCase):
                 check=False,
             )
             self.assertEqual(validate_result.returncode, 0, validate_result.stderr)
+
+
+class RepoOnboardingTests(unittest.TestCase):
+    def cli_env(self) -> dict[str, str]:
+        env = os.environ.copy()
+        env["PYTHONPATH"] = str(Path.cwd() / "src")
+        return env
+
+    def test_cli_onboard_scan_only_writes_summary_unknowns_and_manifest(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            tmp_path = Path(tmp)
+            create_basic_fixture_repo(tmp_path)
+            init_org_pack(tmp_path, "acme")
+
+            add_result = subprocess.run(
+                [
+                    sys.executable,
+                    "-m",
+                    "orgs_ai_harness",
+                    "repo",
+                    "add",
+                    "fixture-repo",
+                    "--purpose",
+                    "Core API service",
+                ],
+                cwd=tmp,
+                env=self.cli_env(),
+                text=True,
+                capture_output=True,
+                check=False,
+            )
+            self.assertEqual(add_result.returncode, 0, add_result.stderr)
+
+            scan_result = subprocess.run(
+                [
+                    sys.executable,
+                    "-m",
+                    "orgs_ai_harness",
+                    "onboard",
+                    "fixture-repo",
+                    "--scan-only",
+                ],
+                cwd=tmp,
+                env=self.cli_env(),
+                text=True,
+                capture_output=True,
+                check=False,
+            )
+
+            self.assertEqual(scan_result.returncode, 0, scan_result.stderr)
+            self.assertIn("Scanned repo fixture-repo", scan_result.stdout)
+            artifact_root = tmp_path / DEFAULT_PACK_DIR / "repos" / "fixture-repo"
+            summary = artifact_root / "onboarding-summary.md"
+            unknowns = artifact_root / "unknowns.yml"
+            manifest = artifact_root / "scan" / "scan-manifest.yml"
+            self.assertTrue(summary.is_file())
+            self.assertTrue(unknowns.is_file())
+            self.assertTrue(manifest.is_file())
+            self.assertIn("Onboarding Summary: fixture-repo", summary.read_text(encoding="utf-8"))
+            self.assertIn("package.json", unknowns.read_text(encoding="utf-8"))
+            self.assertIn("README.md", manifest.read_text(encoding="utf-8"))
+
+            validate_result = subprocess.run(
+                [sys.executable, "-m", "orgs_ai_harness", "validate", "fixture-repo"],
+                cwd=tmp,
+                env=self.cli_env(),
+                text=True,
+                capture_output=True,
+                check=False,
+            )
+
+            self.assertEqual(validate_result.returncode, 0, validate_result.stderr)
+            self.assertIn("Validation passed for fixture-repo", validate_result.stdout)
 
 
 if __name__ == "__main__":
