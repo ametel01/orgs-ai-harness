@@ -87,6 +87,70 @@ class OrgPackFoundationTests(unittest.TestCase):
                 "git@github.com:acme/org-agent-skills.git\n",
             )
 
+    def test_validation_reports_missing_harness_file_with_action(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            root = init_org_pack(Path(tmp), "acme")
+            (root / "harness.yml").unlink()
+
+            result = validate_org_pack(root)
+
+            self.assertFalse(result.ok)
+            self.assertTrue(any("missing required file: harness.yml" in error for error in result.errors))
+            self.assertTrue(any("restore harness.yml" in error for error in result.errors))
+
+    def test_validation_reports_missing_resolver_file_with_action(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            root = init_org_pack(Path(tmp), "acme")
+            (root / "org" / "resolvers.yml").unlink()
+
+            result = validate_org_pack(root)
+
+            self.assertFalse(result.ok)
+            self.assertTrue(any("missing required file: org/resolvers.yml" in error for error in result.errors))
+            self.assertTrue(any("restore org/resolvers.yml" in error for error in result.errors))
+
+    def test_validation_reports_invalid_org_name_and_skills_version(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            root = init_org_pack(Path(tmp), "acme")
+            (root / "harness.yml").write_text(
+                "org:\n"
+                "  name: bad/name\n"
+                "  skills_version: 2\n"
+                "\n"
+                "providers: []\n"
+                "repos: []\n"
+                "redaction:\n"
+                "  globs: []\n"
+                "  regexes: []\n"
+                "command_permissions: []\n",
+                encoding="utf-8",
+            )
+
+            result = validate_org_pack(root)
+
+            self.assertFalse(result.ok)
+            self.assertTrue(any("org.name is invalid" in error for error in result.errors))
+            self.assertTrue(any("org.skills_version must be 1" in error for error in result.errors))
+
+    def test_validation_reports_multiple_independent_errors(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            root = init_org_pack(Path(tmp), "acme")
+            (root / "org" / "resolvers.yml").unlink()
+            (root / "harness.yml").write_text(
+                "org:\n"
+                "  name: bad/name\n"
+                "  skills_version: nope\n",
+                encoding="utf-8",
+            )
+
+            result = validate_org_pack(root)
+
+            self.assertGreaterEqual(len(result.errors), 5)
+            self.assertTrue(any("org/resolvers.yml" in error for error in result.errors))
+            self.assertTrue(any("org.name is invalid" in error for error in result.errors))
+            self.assertTrue(any("org.skills_version must be 1" in error for error in result.errors))
+            self.assertTrue(any("providers" in error for error in result.errors))
+
     def test_cli_init_then_validate(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
             init_result = subprocess.run(
@@ -111,6 +175,31 @@ class OrgPackFoundationTests(unittest.TestCase):
 
             self.assertEqual(validate_result.returncode, 0, validate_result.stderr)
             self.assertIn("Validation passed", validate_result.stdout)
+
+    def test_cli_validate_reports_broken_pack_errors(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            root = init_org_pack(Path(tmp), "acme")
+            (root / "org" / "resolvers.yml").unlink()
+            (root / "harness.yml").write_text(
+                "org:\n"
+                "  name: bad/name\n"
+                "  skills_version: 2\n",
+                encoding="utf-8",
+            )
+
+            validate_result = subprocess.run(
+                [sys.executable, "-m", "orgs_ai_harness", "validate"],
+                cwd=tmp,
+                env=self.cli_env(),
+                text=True,
+                capture_output=True,
+                check=False,
+            )
+
+            self.assertNotEqual(validate_result.returncode, 0)
+            self.assertIn("org/resolvers.yml", validate_result.stderr)
+            self.assertIn("org.name is invalid", validate_result.stderr)
+            self.assertIn("org.skills_version must be 1", validate_result.stderr)
 
     def test_cli_attach_existing_pack_then_validate(self) -> None:
         with tempfile.TemporaryDirectory() as source_tmp, tempfile.TemporaryDirectory() as cwd_tmp:
