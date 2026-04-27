@@ -42,6 +42,15 @@ def discover_github_org(org: str) -> tuple[DiscoveredRepo, ...]:
     return _run_gh_repo_list(target)
 
 
+def discover_github_user(user: str) -> tuple[DiscoveredRepo, ...]:
+    """Discover repositories visible to `gh` for a GitHub user profile."""
+
+    target = user.strip()
+    if not target:
+        raise RepoDiscoveryError("GitHub user cannot be empty")
+    return _run_gh_repo_list(target)
+
+
 def select_discovered_repos(
     discovered: tuple[DiscoveredRepo, ...],
     selection_value: str,

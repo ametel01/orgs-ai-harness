@@ -441,14 +441,15 @@ class RepoRegistryTests(unittest.TestCase):
         env["PATH"] = f"{fake_bin}{os.pathsep}{env['PATH']}"
         return env
 
-    def write_fake_gh(self, fake_bin: Path, payload: str) -> None:
+    def write_fake_gh(self, fake_bin: Path, payload: str, target: str = "acme") -> None:
         fake_bin.mkdir()
         gh_path = fake_bin / "gh"
         gh_path.write_text(
             "#!/usr/bin/env python3\n"
             "import sys\n"
             f"payload = {payload!r}\n"
-            "if sys.argv[1:4] != ['repo', 'list', 'acme']:\n"
+            f"target = {target!r}\n"
+            "if sys.argv[1:4] != ['repo', 'list', target]:\n"
             "    print('unexpected gh args: ' + ' '.join(sys.argv[1:]), file=sys.stderr)\n"
             "    raise SystemExit(2)\n"
             "print(payload)\n",
@@ -589,6 +590,75 @@ class RepoRegistryTests(unittest.TestCase):
             self.assertEqual(entries[0].url, "https://github.com/acme/api-service")
             self.assertEqual(entries[0].default_branch, "main")
             self.assertTrue(validate_org_pack(root).ok)
+
+    def test_cli_repo_discover_user_reuses_selection_path(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            tmp_path = Path(tmp)
+            init_org_pack(tmp_path, "acme")
+            payload = (
+                '[{"name":"cli-tools","owner":{"login":"alexmetelli"},'
+                '"url":"https://github.com/alexmetelli/cli-tools",'
+                '"defaultBranchRef":{"name":"main"},"visibility":"PUBLIC",'
+                '"isArchived":false,"isFork":false,"description":"CLI helpers"}]'
+            )
+            fake_bin = tmp_path / "fake-bin"
+            self.write_fake_gh(fake_bin, payload, target="alexmetelli")
+
+            discover_result = subprocess.run(
+                [
+                    sys.executable,
+                    "-m",
+                    "orgs_ai_harness",
+                    "repo",
+                    "discover",
+                    "--github-user",
+                    "alexmetelli",
+                    "--select",
+                    "cli-tools",
+                ],
+                cwd=tmp,
+                env=self.cli_env_with_fake_gh(fake_bin),
+                text=True,
+                capture_output=True,
+                check=False,
+            )
+
+            self.assertEqual(discover_result.returncode, 0, discover_result.stderr)
+            root = tmp_path / DEFAULT_PACK_DIR
+            entries = load_repo_entries(root / "harness.yml")
+            self.assertEqual(len(entries), 1)
+            self.assertEqual(entries[0].id, "cli-tools")
+            self.assertEqual(entries[0].owner, "alexmetelli")
+            self.assertEqual(entries[0].url, "https://github.com/alexmetelli/cli-tools")
+            self.assertTrue(validate_org_pack(root).ok)
+
+    def test_cli_repo_discover_rejects_org_and_user_together(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            init_org_pack(Path(tmp), "acme")
+
+            discover_result = subprocess.run(
+                [
+                    sys.executable,
+                    "-m",
+                    "orgs_ai_harness",
+                    "repo",
+                    "discover",
+                    "--github-org",
+                    "acme",
+                    "--github-user",
+                    "alexmetelli",
+                    "--select",
+                    "api-service",
+                ],
+                cwd=tmp,
+                env=self.cli_env(),
+                text=True,
+                capture_output=True,
+                check=False,
+            )
+
+            self.assertNotEqual(discover_result.returncode, 0)
+            self.assertIn("only one of --github-org or --github-user", discover_result.stderr)
 
     def test_add_remote_ssh_url_writes_registry_entry_without_local_path(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
