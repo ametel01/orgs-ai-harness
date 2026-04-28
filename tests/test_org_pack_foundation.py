@@ -1878,11 +1878,36 @@ class RepoOnboardingTests(unittest.TestCase):
             self.assertIn("Onboarding Summary: fixture-repo", summary.read_text(encoding="utf-8"))
             self.assertIn("package.json", unknowns.read_text(encoding="utf-8"))
             self.assertIn("README.md", manifest.read_text(encoding="utf-8"))
+            entries = load_repo_entries(tmp_path / DEFAULT_PACK_DIR / "harness.yml")
+            self.assertEqual(entries[0].coverage_status, "needs-investigation")
 
             validate_result = self.run_cli(tmp_path, "validate", "fixture-repo")
 
             self.assertEqual(validate_result.returncode, 0, validate_result.stderr)
             self.assertIn("Validation passed for fixture-repo", validate_result.stdout)
+
+    def test_cli_onboard_marks_only_target_repo_needs_investigation(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            tmp_path = Path(tmp)
+            create_basic_fixture_repo(tmp_path, "api-service")
+            create_basic_fixture_repo(tmp_path, "web-app")
+            init_org_pack(tmp_path, "acme")
+            self.assertEqual(self.run_cli(tmp_path, "repo", "add", "api-service").returncode, 0)
+            self.assertEqual(self.run_cli(tmp_path, "repo", "add", "web-app").returncode, 0)
+
+            scan_result = self.run_cli(tmp_path, "onboard", "api-service", "--scan-only")
+            list_result = self.run_cli(tmp_path, "repo", "list")
+            validate_result = self.run_cli(tmp_path, "validate", "api-service")
+
+            self.assertEqual(scan_result.returncode, 0, scan_result.stderr)
+            self.assertEqual(list_result.returncode, 0, list_result.stderr)
+            self.assertIn("api-service", list_result.stdout)
+            self.assertIn("status=needs-investigation", list_result.stdout)
+            self.assertEqual(validate_result.returncode, 0, validate_result.stderr)
+            entries = {entry.id: entry for entry in load_repo_entries(tmp_path / DEFAULT_PACK_DIR / "harness.yml")}
+            self.assertEqual(entries["api-service"].coverage_status, "needs-investigation")
+            self.assertEqual(entries["web-app"].coverage_status, "selected")
+            self.assertFalse((tmp_path / DEFAULT_PACK_DIR / "repos" / "web-app").exists())
 
     def test_cli_onboard_writes_hypothesis_map_from_mixed_evidence_and_seed_context(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
@@ -2131,6 +2156,42 @@ class RepoOnboardingTests(unittest.TestCase):
 
             self.assertNotEqual(validate_result.returncode, 0)
             self.assertIn("field evidence_paths must be a list", validate_result.stderr)
+
+    def test_validate_rejects_inactive_needs_investigation_status(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            tmp_path = Path(tmp)
+            root = init_org_pack(tmp_path, "acme")
+            config_path = root / "harness.yml"
+            config_path.write_text(
+                "org:\n"
+                "  name: acme\n"
+                "  skills_version: 1\n"
+                "\n"
+                "providers: []\n"
+                "repos:\n"
+                "  - id: api-service\n"
+                "    name: api-service\n"
+                "    owner: null\n"
+                "    purpose: null\n"
+                "    url: null\n"
+                "    default_branch: main\n"
+                "    local_path: ../api-service\n"
+                "    coverage_status: needs-investigation\n"
+                "    active: false\n"
+                "    deactivation_reason: null\n"
+                "    pack_ref: null\n"
+                "    external: false\n"
+                "redaction:\n"
+                "  globs: []\n"
+                "  regexes: []\n"
+                "command_permissions: []\n",
+                encoding="utf-8",
+            )
+
+            validate_result = self.run_cli(tmp_path, "validate")
+
+            self.assertNotEqual(validate_result.returncode, 0)
+            self.assertIn("needs-investigation coverage must be active", validate_result.stderr)
 
 
 if __name__ == "__main__":

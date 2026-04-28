@@ -6,7 +6,7 @@ from dataclasses import dataclass
 import json
 from pathlib import Path
 
-from orgs_ai_harness.repo_registry import RepoEntry, load_repo_entries
+from orgs_ai_harness.repo_registry import RepoEntry, load_repo_entries, update_repo_coverage_status
 
 
 class RepoOnboardingError(Exception):
@@ -47,10 +47,12 @@ def scan_repo_only(root: Path, repo_id: str) -> OnboardingResult:
 
     root = root.resolve()
     entry = _find_repo(root, repo_id)
+    update_repo_coverage_status(root, entry.id, "onboarding")
     repo_path = _resolve_repo_path(root, entry)
 
     scanned, skipped = _scan_repo(repo_path)
     unknowns = _default_unknowns(scanned)
+    final_status = _status_for_unknowns(unknowns)
 
     artifact_root = root / "repos" / entry.id
     scan_root = artifact_root / "scan"
@@ -78,6 +80,7 @@ def scan_repo_only(root: Path, repo_id: str) -> OnboardingResult:
         + "\n",
         encoding="utf-8",
     )
+    update_repo_coverage_status(root, entry.id, final_status)
 
     return OnboardingResult(
         repo_id=entry.id,
@@ -186,12 +189,19 @@ def _default_unknowns(scanned: list[dict[str, str | int]]) -> list[dict[str, obj
             "id": "unk_001",
             "question": "Which command is the narrowest reliable unit test command?",
             "why_it_matters": "Eval and skill generation need reproducible validation commands.",
-            "severity": "important",
+            "severity": "blocking",
             "status": "open",
             "evidence": evidence,
             "recommended_investigation": "Inspect package scripts and CI job command usage.",
         }
     ]
+
+
+def _status_for_unknowns(unknowns: list[dict[str, object]]) -> str:
+    for unknown in unknowns:
+        if unknown.get("severity") == "blocking" and unknown.get("status") == "open":
+            return "needs-investigation"
+    return "onboarding"
 
 
 def _render_summary(

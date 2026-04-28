@@ -264,15 +264,16 @@ def _validate_repo_entry(
             f"harness.yml repo id is invalid: {repo_id} "
             "(use letters, numbers, dots, underscores, or hyphens)"
         )
-    if coverage_status not in {"selected", "deactivated", "external"}:
+    if coverage_status not in {"selected", "onboarding", "needs-investigation", "deactivated", "external"}:
         errors.append(
             f"harness.yml repo {repo_id} has invalid coverage_status: {coverage_status} "
-            "(supported values: selected, deactivated, external)"
+            "(supported values: selected, onboarding, needs-investigation, deactivated, external)"
         )
-    if coverage_status == "selected" and not active:
-        errors.append(f"harness.yml repo {repo_id} with selected coverage must be active")
-    if coverage_status == "selected" and external:
-        errors.append(f"harness.yml repo {repo_id} cannot be both selected coverage and external")
+    if coverage_status in {"selected", "onboarding", "needs-investigation"}:
+        if not active:
+            errors.append(f"harness.yml repo {repo_id} with {coverage_status} coverage must be active")
+        if external:
+            errors.append(f"harness.yml repo {repo_id} cannot be both {coverage_status} coverage and external")
     if coverage_status == "deactivated":
         if active:
             errors.append(f"harness.yml repo {repo_id} with deactivated coverage must be inactive")

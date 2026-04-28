@@ -192,6 +192,31 @@ def deactivate_repo(root: Path, repo_id: str, reason: str) -> RepoEntry:
     return updated_entry
 
 
+def update_repo_coverage_status(root: Path, repo_id: str, coverage_status: str) -> RepoEntry:
+    """Update the coverage status for one registered repo."""
+
+    normalized_repo_id = repo_id.strip()
+    if not normalized_repo_id:
+        raise RepoRegistryError("repo id cannot be empty")
+
+    root = root.resolve()
+    entries = load_repo_entries(root / "harness.yml")
+    updated_entries: list[RepoEntry] = []
+    updated_entry: RepoEntry | None = None
+    for entry in entries:
+        if entry.id == normalized_repo_id:
+            updated_entry = replace(entry, coverage_status=coverage_status)
+            updated_entries.append(updated_entry)
+        else:
+            updated_entries.append(entry)
+
+    if updated_entry is None:
+        raise RepoRegistryError(f"repo id is not registered: {normalized_repo_id}")
+
+    save_repo_entries(root / "harness.yml", tuple(updated_entries))
+    return updated_entry
+
+
 def remove_repo(root: Path, repo_id: str, reason: str, *, force: bool = False) -> RepoEntry:
     """Remove a registry entry without touching repository contents."""
 
