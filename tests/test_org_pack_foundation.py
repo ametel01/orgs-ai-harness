@@ -2890,6 +2890,7 @@ class RepoOnboardingTests(unittest.TestCase):
             self.assertEqual(metadata["repo_id"], "fixture-repo")
             self.assertEqual(metadata["status"], "open")
             self.assertEqual(metadata["risk"], "medium")
+            self.assertEqual(metadata["proposal_type"], "skill edits")
             self.assertEqual(metadata["affected_evals"], ["command-selection-tests"])
             self.assertIn("trace-summaries/eval-events.jsonl:1", metadata["evidence"])
             evidence_text = (proposal_root / "evidence.jsonl").read_text(encoding="utf-8")
@@ -2901,6 +2902,55 @@ class RepoOnboardingTests(unittest.TestCase):
             self.assertIn("Proposal: prop_001", show_result.stdout)
             self.assertIn("Evidence References", show_result.stdout)
             self.assertIn("Compact Diff", show_result.stdout)
+
+    def test_cli_improve_uses_repo_redaction_config_and_suppresses_sensitive_file_contents(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            tmp_path = Path(tmp)
+            create_basic_fixture_repo(tmp_path)
+            init_org_pack(tmp_path, "acme")
+            root = tmp_path / DEFAULT_PACK_DIR
+            config_path = root / "harness.yml"
+            config_path.write_text(
+                config_path.read_text(encoding="utf-8").replace(
+                    "redaction:\n  globs: []\n  regexes: []\n",
+                    "redaction:\n  globs: []\n  regexes:\n    - 'CUSTOM-[0-9]+'\n",
+                ),
+                encoding="utf-8",
+            )
+            self.assertEqual(self.run_cli(tmp_path, "repo", "add", "fixture-repo").returncode, 0)
+            self.assertEqual(self.run_cli(tmp_path, "onboard", "fixture-repo").returncode, 0)
+            trace_path = root / "trace-summaries" / "eval-events.jsonl"
+            trace_path.write_text(
+                json.dumps(
+                    {
+                        "schema_version": 1,
+                        "event_id": "evt_eval_fixture_0001",
+                        "event_type": "scoring",
+                        "timestamp": "2026-04-28T00:00:00+00:00",
+                        "repo_id": "fixture-repo",
+                        "pack_ref": None,
+                        "actor": "adapter",
+                        "adapter": "fixture",
+                        "payload": {
+                            "task_id": "safe-procedure",
+                            "passed": False,
+                            "answer": "custom secret CUSTOM-123",
+                            "file": {"path": ".env", "content": "SECRET_TOKEN=do-not-leak"},
+                        },
+                    }
+                )
+                + "\n",
+                encoding="utf-8",
+            )
+
+            improve_result = self.run_cli(tmp_path, "improve", "fixture-repo")
+
+            self.assertEqual(improve_result.returncode, 0, improve_result.stderr)
+            evidence_text = (root / "proposals" / "prop_001" / "evidence.jsonl").read_text(encoding="utf-8")
+            self.assertIn("[REDACTED]", evidence_text)
+            self.assertIn("[REDACTED SENSITIVE FILE CONTENT]", evidence_text)
+            self.assertNotIn("CUSTOM-123", evidence_text)
+            self.assertNotIn("do-not-leak", evidence_text)
 
     def test_cli_proposals_apply_requires_confirmation_and_updates_protected_artifact(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
@@ -2960,6 +3010,46 @@ class RepoOnboardingTests(unittest.TestCase):
                 protected["repos/fixture-repo/skills/build-test-debug/SKILL.md"],
                 hashlib.sha256(target.read_bytes()).hexdigest(),
             )
+
+    def test_cli_proposals_apply_rejects_invalid_metadata_before_mutation(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            tmp_path = Path(tmp)
+            create_basic_fixture_repo(tmp_path)
+            init_org_pack(tmp_path, "acme")
+            self.assertEqual(self.run_cli(tmp_path, "repo", "add", "fixture-repo").returncode, 0)
+            self.assertEqual(self.run_cli(tmp_path, "onboard", "fixture-repo").returncode, 0)
+            root = tmp_path / DEFAULT_PACK_DIR
+            trace_path = root / "trace-summaries" / "eval-events.jsonl"
+            trace_path.write_text(
+                json.dumps(
+                    {
+                        "schema_version": 1,
+                        "event_id": "evt_eval_fixture_0001",
+                        "event_type": "scoring",
+                        "timestamp": "2026-04-28T00:00:00+00:00",
+                        "repo_id": "fixture-repo",
+                        "pack_ref": None,
+                        "actor": "adapter",
+                        "adapter": "fixture",
+                        "payload": {"task_id": "command-selection-tests", "passed": False},
+                    }
+                )
+                + "\n",
+                encoding="utf-8",
+            )
+            self.assertEqual(self.run_cli(tmp_path, "improve", "fixture-repo").returncode, 0)
+            metadata_path = root / "proposals" / "prop_001" / "metadata.yml"
+            metadata = json.loads(metadata_path.read_text(encoding="utf-8"))
+            metadata["proposal_type"] = "surprise mutation"
+            metadata_path.write_text(json.dumps(metadata), encoding="utf-8")
+            target = root / "repos" / "fixture-repo" / "skills" / "build-test-debug" / "SKILL.md"
+            target_before = target.read_bytes()
+
+            apply_result = self.run_cli(tmp_path, "proposals", "apply", "prop_001", "--yes")
+
+            self.assertNotEqual(apply_result.returncode, 0)
+            self.assertIn("proposal_type has unsupported value", apply_result.stderr)
+            self.assertEqual(target.read_bytes(), target_before)
 
     def test_cli_proposals_reject_records_reason_without_mutating_artifacts(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:

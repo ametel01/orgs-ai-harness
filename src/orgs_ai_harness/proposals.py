@@ -10,6 +10,7 @@ from pathlib import Path
 import re
 import subprocess
 
+from orgs_ai_harness.config import split_top_level_blocks
 from orgs_ai_harness.repo_registry import RepoEntry, load_repo_entries
 
 
@@ -58,6 +59,18 @@ SECRET_PATTERNS = (
     re.compile(r"(?i)(bearer\s+)[a-z0-9._~+/=-]+"),
     re.compile(r"-----BEGIN [A-Z ]*PRIVATE KEY-----.*?-----END [A-Z ]*PRIVATE KEY-----", re.DOTALL),
 )
+SUPPORTED_PROPOSAL_TYPES = {
+    "skill edits",
+    "resolver edits",
+    "new references",
+    "new scripts",
+    "new eval tasks",
+    "unknown updates",
+    "onboarding summary updates",
+    "policy updates",
+}
+SUPPORTED_STATUSES = {"open", "applied", "rejected"}
+SUPPORTED_RISKS = {"low", "medium", "high"}
 
 
 def improve_repo(root: Path, repo_id: str) -> ImproveResult:
@@ -65,7 +78,7 @@ def improve_repo(root: Path, repo_id: str) -> ImproveResult:
 
     root = root.resolve()
     entry = _find_repo(root, repo_id)
-    evidence = _collect_evidence(root, entry.id)
+    evidence = _collect_evidence(root, entry.id, _redaction_patterns(root))
     if not evidence:
         return ImproveResult(
             repo_id=entry.id,
@@ -89,7 +102,7 @@ def improve_repo(root: Path, repo_id: str) -> ImproveResult:
         encoding="utf-8",
     )
     (proposal_root / "patch.diff").write_text(patch, encoding="utf-8")
-    (proposal_root / "metadata.yml").write_text(json.dumps(metadata, indent=2, sort_keys=True) + "\n", encoding="utf-8")
+    _write_metadata(proposal_root, metadata)
 
     return ImproveResult(repo_id=entry.id, proposal_id=proposal_id, proposal_root=proposal_root)
 
@@ -177,6 +190,7 @@ def list_proposals(root: Path) -> tuple[ProposalSummary, ...]:
     summaries: list[ProposalSummary] = []
     for proposal_root in sorted(path for path in proposals_root.iterdir() if path.is_dir()):
         metadata = _load_metadata(proposal_root)
+        _validate_metadata(root, proposal_root, metadata, require_open=False)
         summaries.append(
             ProposalSummary(
                 proposal_id=str(metadata.get("id", proposal_root.name)),
@@ -201,6 +215,7 @@ def render_proposal_show(root: Path, proposal_id: str) -> str:
     if not proposal_root.is_dir():
         raise ProposalError(f"proposal id is not found: {normalized_id}")
     metadata = _load_metadata(proposal_root)
+    _validate_metadata(root, proposal_root, metadata, require_open=False)
     evidence_refs = metadata.get("evidence")
     if not isinstance(evidence_refs, list):
         evidence_refs = []
@@ -232,6 +247,7 @@ def apply_proposal(root: Path, proposal_id: str, *, approved: bool = False) -> P
     root = root.resolve()
     proposal_root = _proposal_root(root, proposal_id)
     metadata = _load_metadata(proposal_root)
+    _validate_metadata(root, proposal_root, metadata, require_open=True)
     _ensure_open(metadata, proposal_root)
     repo_id = _metadata_string(metadata, "repo_id", proposal_root)
     target_artifacts = _metadata_string_list(metadata, "target_artifacts", proposal_root)
@@ -270,6 +286,7 @@ def reject_proposal(root: Path, proposal_id: str, *, reason: str) -> ProposalDec
     root = root.resolve()
     proposal_root = _proposal_root(root, proposal_id)
     metadata = _load_metadata(proposal_root)
+    _validate_metadata(root, proposal_root, metadata, require_open=True)
     _ensure_open(metadata, proposal_root)
     repo_id = _metadata_string(metadata, "repo_id", proposal_root)
     metadata.update(
@@ -303,7 +320,7 @@ def _find_repo(root: Path, repo_id: str) -> RepoEntry:
     raise ProposalError(f"repo id is not registered: {normalized_repo_id}")
 
 
-def _collect_evidence(root: Path, repo_id: str) -> list[dict[str, object]]:
+def _collect_evidence(root: Path, repo_id: str, redaction_patterns: tuple[re.Pattern[str], ...]) -> list[dict[str, object]]:
     evidence: list[dict[str, object]] = []
     trace_root = root / "trace-summaries"
     for trace_path in sorted(trace_root.glob("*.jsonl")):
@@ -316,13 +333,19 @@ def _collect_evidence(root: Path, repo_id: str) -> list[dict[str, object]]:
                 continue
             if not isinstance(event, dict) or event.get("repo_id") != repo_id:
                 continue
-            evidence_item = _event_to_evidence(root, trace_path, line_number, event)
+            evidence_item = _event_to_evidence(root, trace_path, line_number, event, redaction_patterns)
             if evidence_item is not None:
                 evidence.append(evidence_item)
     return evidence
 
 
-def _event_to_evidence(root: Path, trace_path: Path, line_number: int, event: dict[str, object]) -> dict[str, object] | None:
+def _event_to_evidence(
+    root: Path,
+    trace_path: Path,
+    line_number: int,
+    event: dict[str, object],
+    redaction_patterns: tuple[re.Pattern[str], ...],
+) -> dict[str, object] | None:
     event_type = event.get("event_type")
     payload = event.get("payload")
     payload = payload if isinstance(payload, dict) else {}
@@ -342,7 +365,7 @@ def _event_to_evidence(root: Path, trace_path: Path, line_number: int, event: di
         "event_type": event_type,
         "event_id": event.get("event_id"),
         "trace": f"{relative_trace}:{line_number}",
-        "payload": _redact_jsonable(payload),
+        "payload": _redact_jsonable(payload, redaction_patterns),
     }
 
 
@@ -369,7 +392,7 @@ def _proposal_metadata(
         "repo_id": entry.id,
         "status": "open",
         "risk": "medium" if "eval_failure" in created_from else "low",
-        "proposal_type": "unknown updates",
+        "proposal_type": _proposal_type_for(target, created_from),
         "target_artifacts": [target],
         "affected_evals": affected_evals,
         "evidence": [str(item["trace"]) for item in evidence],
@@ -469,6 +492,35 @@ def _write_metadata(proposal_root: Path, metadata: dict[str, object]) -> None:
     )
 
 
+def _validate_metadata(
+    root: Path,
+    proposal_root: Path,
+    metadata: dict[str, object],
+    *,
+    require_open: bool,
+) -> None:
+    proposal_id = _metadata_string(metadata, "id", proposal_root)
+    if proposal_id != proposal_root.name:
+        raise ProposalError(f"proposal metadata id must match directory name: {proposal_root / 'metadata.yml'}")
+    _metadata_string(metadata, "repo_id", proposal_root)
+    status = _metadata_string(metadata, "status", proposal_root)
+    if status not in SUPPORTED_STATUSES:
+        raise ProposalError(f"proposal metadata field status has unsupported value: {status}")
+    if require_open and status != "open":
+        raise ProposalError(f"proposal {proposal_root.name} is not open: status={status}")
+    risk = _metadata_string(metadata, "risk", proposal_root)
+    if risk not in SUPPORTED_RISKS:
+        raise ProposalError(f"proposal metadata field risk has unsupported value: {risk}")
+    proposal_type = _metadata_string(metadata, "proposal_type", proposal_root)
+    if proposal_type not in SUPPORTED_PROPOSAL_TYPES:
+        raise ProposalError(f"proposal metadata field proposal_type has unsupported value: {proposal_type}")
+    for field in ("target_artifacts", "affected_evals", "evidence", "created_from"):
+        values = _metadata_string_list(metadata, field, proposal_root)
+        if field == "target_artifacts":
+            for value in values:
+                _validate_relative_artifact_path(root, proposal_root, value)
+
+
 def _proposal_root(root: Path, proposal_id: str) -> Path:
     normalized_id = proposal_id.strip()
     if not normalized_id:
@@ -494,12 +546,24 @@ def _metadata_string(metadata: dict[str, object], field: str, proposal_root: Pat
 
 def _metadata_string_list(metadata: dict[str, object], field: str, proposal_root: Path) -> list[str]:
     value = metadata.get(field)
-    if not isinstance(value, list) or not value:
+    if not isinstance(value, list):
+        raise ProposalError(f"proposal metadata field {field} must be a list: {proposal_root / 'metadata.yml'}")
+    if field != "affected_evals" and not value:
         raise ProposalError(f"proposal metadata field {field} must be a non-empty list: {proposal_root / 'metadata.yml'}")
     strings = [item for item in value if isinstance(item, str) and item.strip()]
     if len(strings) != len(value):
         raise ProposalError(f"proposal metadata field {field} must contain only strings: {proposal_root / 'metadata.yml'}")
     return strings
+
+
+def _validate_relative_artifact_path(root: Path, proposal_root: Path, value: str) -> None:
+    path = Path(value)
+    if path.is_absolute() or ".." in path.parts:
+        raise ProposalError(f"proposal target artifact must be root-relative: {value}")
+    try:
+        (root / path).resolve().relative_to(root)
+    except ValueError as exc:
+        raise ProposalError(f"proposal target artifact escapes org pack root: {value}") from exc
 
 
 @dataclass(frozen=True)
@@ -610,6 +674,18 @@ def _affected_eval_ids(root: Path, repo_id: str) -> list[str]:
     return sorted(eval_ids)
 
 
+def _proposal_type_for(target: str, created_from: list[str]) -> str:
+    if "/skills/" in target:
+        return "skill edits"
+    if target.endswith("resolvers.yml"):
+        return "resolver edits"
+    if "command_correction" in created_from:
+        return "policy updates"
+    if target.endswith("onboarding-summary.md"):
+        return "onboarding summary updates"
+    return "unknown updates"
+
+
 def _first_summary_line(path: Path) -> str:
     if not path.is_file():
         return "(missing summary)"
@@ -629,17 +705,77 @@ def _compact_diff(path: Path) -> list[str]:
     return lines[:40]
 
 
-def _redact_jsonable(value: object) -> object:
+def _redact_jsonable(value: object, patterns: tuple[re.Pattern[str], ...]) -> object:
     if isinstance(value, dict):
-        return {str(key): _redact_jsonable(item) for key, item in value.items()}
+        path_value = value.get("path")
+        if isinstance(path_value, str) and _looks_sensitive_path(path_value):
+            return {
+                str(key): ("[REDACTED SENSITIVE FILE CONTENT]" if key in {"content", "contents", "text"} else _redact_jsonable(item, patterns))
+                for key, item in value.items()
+            }
+        return {str(key): _redact_jsonable(item, patterns) for key, item in value.items()}
     if isinstance(value, list):
-        return [_redact_jsonable(item) for item in value]
+        return [_redact_jsonable(item, patterns) for item in value]
     if isinstance(value, str):
         redacted = value
-        for pattern in SECRET_PATTERNS:
+        for pattern in patterns:
             redacted = pattern.sub(_redaction_replacement, redacted)
         return redacted
     return value
+
+
+def _redaction_patterns(root: Path) -> tuple[re.Pattern[str], ...]:
+    patterns = list(SECRET_PATTERNS)
+    config_path = root / "harness.yml"
+    if not config_path.is_file():
+        return tuple(patterns)
+    try:
+        blocks = split_top_level_blocks(config_path.read_text(encoding="utf-8"))
+    except Exception:
+        return tuple(patterns)
+    redaction_block = next((block for block in blocks if block.key == "redaction"), None)
+    if redaction_block is None:
+        return tuple(patterns)
+    for pattern_text in _read_simple_yaml_list(redaction_block.lines, "regexes"):
+        try:
+            patterns.append(re.compile(pattern_text))
+        except re.error:
+            continue
+    return tuple(patterns)
+
+
+def _read_simple_yaml_list(lines: tuple[str, ...], field: str) -> list[str]:
+    values: list[str] = []
+    in_list = False
+    prefix = f"  {field}:"
+    for line in lines[1:]:
+        if line.startswith(prefix):
+            in_list = True
+            inline = line.removeprefix(prefix).strip()
+            if inline == "[]":
+                return []
+            continue
+        if in_list and line.startswith("  ") and not line.startswith("    - "):
+            break
+        if in_list and line.startswith("    - "):
+            values.append(_strip_yaml_quotes(line.removeprefix("    - ").strip()))
+    return values
+
+
+def _strip_yaml_quotes(value: str) -> str:
+    if len(value) >= 2 and value[0] == value[-1] and value[0] in {"'", '"'}:
+        return value[1:-1]
+    return value
+
+
+def _looks_sensitive_path(value: str) -> bool:
+    name = Path(value).name.lower()
+    return (
+        name == ".env"
+        or name.startswith(".env.")
+        or name.endswith((".pem", ".key", ".p12", ".pfx"))
+        or any(part in name for part in ("credential", "credentials", "secret", "secrets", "token", "tokens"))
+    )
 
 
 def _redaction_replacement(match: re.Match[str]) -> str:
