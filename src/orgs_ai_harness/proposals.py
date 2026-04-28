@@ -4,6 +4,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 from datetime import UTC, datetime
+import hashlib
 import json
 from pathlib import Path
 import re
@@ -33,6 +34,14 @@ class ProposalSummary:
     proposal_root: Path
 
 
+@dataclass(frozen=True)
+class ProposalDecisionResult:
+    proposal_id: str
+    repo_id: str
+    status: str
+    changed_artifacts: tuple[str, ...]
+
+
 SECRET_PATTERNS = (
     re.compile(r"(?i)(api[_-]?key|secret|token|password)([\"'\s:=]+)([^\"'\s,}]+)"),
     re.compile(r"(?i)(bearer\s+)[a-z0-9._~+/=-]+"),
@@ -60,7 +69,8 @@ def improve_repo(root: Path, repo_id: str) -> ImproveResult:
 
     metadata = _proposal_metadata(root, entry, proposal_id, evidence)
     summary = _render_summary(metadata, evidence)
-    patch = _render_patch(entry)
+    target = str(metadata["target_artifacts"][0])
+    patch = _render_patch(target)
 
     (proposal_root / "summary.md").write_text(summary, encoding="utf-8")
     (proposal_root / "evidence.jsonl").write_text(
@@ -128,6 +138,70 @@ def render_proposal_show(root: Path, proposal_id: str) -> str:
         *diff_lines,
     ]
     return "\n".join(lines) + "\n"
+
+
+def apply_proposal(root: Path, proposal_id: str, *, approved: bool = False) -> ProposalDecisionResult:
+    """Apply an open proposal after explicit user approval."""
+
+    if not approved:
+        raise ProposalError("proposal apply requires explicit approval; pass --yes")
+    root = root.resolve()
+    proposal_root = _proposal_root(root, proposal_id)
+    metadata = _load_metadata(proposal_root)
+    _ensure_open(metadata, proposal_root)
+    repo_id = _metadata_string(metadata, "repo_id", proposal_root)
+    target_artifacts = _metadata_string_list(metadata, "target_artifacts", proposal_root)
+    patch = _parse_patch(proposal_root / "patch.diff")
+    if patch.target not in target_artifacts:
+        raise ProposalError(f"patch target is not listed in proposal metadata: {patch.target}")
+    target_path = root / patch.target
+    if not target_path.is_file():
+        raise ProposalError(f"proposal target artifact is missing: {patch.target}")
+    before = target_path.read_text(encoding="utf-8")
+    after = _apply_append_patch(before, patch.added_lines)
+    target_path.write_text(after, encoding="utf-8")
+    _update_approval_hashes(root, repo_id, [patch.target])
+    metadata.update(
+        {
+            "status": "applied",
+            "applied_at": datetime.now(UTC).isoformat(),
+            "applied_artifacts": [patch.target],
+        }
+    )
+    _write_metadata(proposal_root, metadata)
+    return ProposalDecisionResult(
+        proposal_id=str(metadata.get("id", proposal_id)),
+        repo_id=repo_id,
+        status="applied",
+        changed_artifacts=(patch.target,),
+    )
+
+
+def reject_proposal(root: Path, proposal_id: str, *, reason: str) -> ProposalDecisionResult:
+    """Reject an open proposal while preserving all target artifacts."""
+
+    normalized_reason = reason.strip()
+    if not normalized_reason:
+        raise ProposalError("proposal rejection reason cannot be empty")
+    root = root.resolve()
+    proposal_root = _proposal_root(root, proposal_id)
+    metadata = _load_metadata(proposal_root)
+    _ensure_open(metadata, proposal_root)
+    repo_id = _metadata_string(metadata, "repo_id", proposal_root)
+    metadata.update(
+        {
+            "status": "rejected",
+            "rejected_at": datetime.now(UTC).isoformat(),
+            "rejection_reason": normalized_reason,
+        }
+    )
+    _write_metadata(proposal_root, metadata)
+    return ProposalDecisionResult(
+        proposal_id=str(metadata.get("id", proposal_id)),
+        repo_id=repo_id,
+        status="rejected",
+        changed_artifacts=(),
+    )
 
 
 def _find_repo(root: Path, repo_id: str) -> RepoEntry:
@@ -249,8 +323,7 @@ def _render_summary(metadata: dict[str, object], evidence: list[dict[str, object
     ) + "\n"
 
 
-def _render_patch(entry: RepoEntry) -> str:
-    target = f"repos/{entry.id}/skills/build-test-debug/SKILL.md"
+def _render_patch(target: str) -> str:
     return "\n".join(
         [
             f"diff --git a/{target} b/{target}",
@@ -287,6 +360,101 @@ def _load_metadata(proposal_root: Path) -> dict[str, object]:
     if not isinstance(metadata, dict):
         raise ProposalError(f"proposal metadata must be an object: {metadata_path}")
     return metadata
+
+
+def _write_metadata(proposal_root: Path, metadata: dict[str, object]) -> None:
+    (proposal_root / "metadata.yml").write_text(
+        json.dumps(metadata, indent=2, sort_keys=True) + "\n",
+        encoding="utf-8",
+    )
+
+
+def _proposal_root(root: Path, proposal_id: str) -> Path:
+    normalized_id = proposal_id.strip()
+    if not normalized_id:
+        raise ProposalError("proposal id cannot be empty")
+    proposal_root = root / "proposals" / normalized_id
+    if not proposal_root.is_dir():
+        raise ProposalError(f"proposal id is not found: {normalized_id}")
+    return proposal_root
+
+
+def _ensure_open(metadata: dict[str, object], proposal_root: Path) -> None:
+    status = metadata.get("status")
+    if status != "open":
+        raise ProposalError(f"proposal {proposal_root.name} is not open: status={status}")
+
+
+def _metadata_string(metadata: dict[str, object], field: str, proposal_root: Path) -> str:
+    value = metadata.get(field)
+    if not isinstance(value, str) or not value.strip():
+        raise ProposalError(f"proposal metadata field {field} must be a non-empty string: {proposal_root / 'metadata.yml'}")
+    return value
+
+
+def _metadata_string_list(metadata: dict[str, object], field: str, proposal_root: Path) -> list[str]:
+    value = metadata.get(field)
+    if not isinstance(value, list) or not value:
+        raise ProposalError(f"proposal metadata field {field} must be a non-empty list: {proposal_root / 'metadata.yml'}")
+    strings = [item for item in value if isinstance(item, str) and item.strip()]
+    if len(strings) != len(value):
+        raise ProposalError(f"proposal metadata field {field} must contain only strings: {proposal_root / 'metadata.yml'}")
+    return strings
+
+
+@dataclass(frozen=True)
+class _ParsedPatch:
+    target: str
+    added_lines: tuple[str, ...]
+
+
+def _parse_patch(path: Path) -> _ParsedPatch:
+    if not path.is_file():
+        raise ProposalError(f"proposal patch is missing: {path}")
+    target: str | None = None
+    added_lines: list[str] = []
+    for line in path.read_text(encoding="utf-8").splitlines():
+        if line.startswith("+++ b/"):
+            target = line.removeprefix("+++ b/")
+            continue
+        if not line.startswith("+") or line.startswith("+++") or line.startswith("diff "):
+            continue
+        added_lines.append(line[1:])
+    if target is None:
+        raise ProposalError(f"proposal patch missing target header: {path}")
+    if not added_lines:
+        raise ProposalError(f"proposal patch has no added lines: {path}")
+    return _ParsedPatch(target=target, added_lines=tuple(added_lines))
+
+
+def _apply_append_patch(before: str, added_lines: tuple[str, ...]) -> str:
+    addition = "\n".join(added_lines)
+    if addition in before:
+        return before
+    separator = "" if before.endswith("\n") else "\n"
+    return f"{before}{separator}{addition}\n"
+
+
+def _update_approval_hashes(root: Path, repo_id: str, changed_artifacts: list[str]) -> None:
+    approval_path = root / "repos" / repo_id / "approval.yml"
+    if not approval_path.is_file():
+        return
+    try:
+        approval = json.loads(approval_path.read_text(encoding="utf-8"))
+    except json.JSONDecodeError as exc:
+        raise ProposalError(f"approval metadata is malformed: {approval_path} ({exc.msg})") from exc
+    if not isinstance(approval, dict):
+        raise ProposalError(f"approval metadata must be an object: {approval_path}")
+    protected = approval.get("protected_artifacts")
+    if not isinstance(protected, list):
+        return
+    changed = set(changed_artifacts)
+    for item in protected:
+        if not isinstance(item, dict) or item.get("path") not in changed:
+            continue
+        artifact_path = root / str(item["path"])
+        item["sha256"] = hashlib.sha256(artifact_path.read_bytes()).hexdigest()
+    approval_path.write_text(json.dumps(approval, indent=2, sort_keys=True) + "\n", encoding="utf-8")
 
 
 def _first_summary_line(path: Path) -> str:

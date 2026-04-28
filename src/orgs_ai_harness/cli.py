@@ -16,7 +16,14 @@ from orgs_ai_harness.org_pack import (
     init_org_pack,
     resolve_default_root,
 )
-from orgs_ai_harness.proposals import ProposalError, improve_repo, list_proposals, render_proposal_show
+from orgs_ai_harness.proposals import (
+    ProposalError,
+    apply_proposal,
+    improve_repo,
+    list_proposals,
+    reject_proposal,
+    render_proposal_show,
+)
 from orgs_ai_harness.repo_registry import (
     RepoEntry,
     RepoRegistryError,
@@ -134,6 +141,12 @@ def build_parser() -> argparse.ArgumentParser:
     proposals_subparsers.add_parser("list", help="List generated proposals")
     proposals_show = proposals_subparsers.add_parser("show", help="Show one generated proposal")
     proposals_show.add_argument("proposal_id", help="Proposal id to show")
+    proposals_apply = proposals_subparsers.add_parser("apply", help="Apply one generated proposal")
+    proposals_apply.add_argument("proposal_id", help="Proposal id to apply")
+    proposals_apply.add_argument("--yes", action="store_true", help="Confirm proposal application")
+    proposals_reject = proposals_subparsers.add_parser("reject", help="Reject one generated proposal")
+    proposals_reject.add_argument("proposal_id", help="Proposal id to reject")
+    proposals_reject.add_argument("--reason", required=True, help="Human rejection reason")
 
     return parser
 
@@ -275,6 +288,17 @@ def main(argv: list[str] | None = None) -> int:
                 return 0
             if args.proposals_command == "show":
                 print(render_proposal_show(root, args.proposal_id), end="")
+                return 0
+            if args.proposals_command == "apply":
+                result = apply_proposal(root, args.proposal_id, approved=args.yes)
+                print(
+                    f"Applied proposal {result.proposal_id} for {result.repo_id}; "
+                    f"changed={len(result.changed_artifacts)}"
+                )
+                return 0
+            if args.proposals_command == "reject":
+                result = reject_proposal(root, args.proposal_id, reason=args.reason)
+                print(f"Rejected proposal {result.proposal_id} for {result.repo_id}; status={result.status}")
                 return 0
 
         if args.command == "repo":

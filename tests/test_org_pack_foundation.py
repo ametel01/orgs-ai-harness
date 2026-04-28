@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from dataclasses import replace
+import hashlib
 import json
 import os
 import subprocess
@@ -2871,6 +2872,111 @@ class RepoOnboardingTests(unittest.TestCase):
             self.assertIn("Proposal: prop_001", show_result.stdout)
             self.assertIn("Evidence References", show_result.stdout)
             self.assertIn("Compact Diff", show_result.stdout)
+
+    def test_cli_proposals_apply_requires_confirmation_and_updates_protected_artifact(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            tmp_path = Path(tmp)
+            create_basic_fixture_repo(tmp_path)
+            init_org_pack(tmp_path, "acme")
+            self.assertEqual(self.run_cli(tmp_path, "repo", "add", "fixture-repo").returncode, 0)
+            self.assertEqual(self.run_cli(tmp_path, "onboard", "fixture-repo").returncode, 0)
+            self.assertEqual(self.run_cli(tmp_path, "approve", "fixture-repo", "--all").returncode, 0)
+            root = tmp_path / DEFAULT_PACK_DIR
+            trace_path = root / "trace-summaries" / "eval-events.jsonl"
+            trace_path.write_text(
+                json.dumps(
+                    {
+                        "schema_version": 1,
+                        "event_id": "evt_eval_fixture_0001",
+                        "event_type": "scoring",
+                        "timestamp": "2026-04-28T00:00:00+00:00",
+                        "repo_id": "fixture-repo",
+                        "pack_ref": "repos/fixture-repo/approval.yml",
+                        "actor": "adapter",
+                        "adapter": "fixture",
+                        "payload": {"task_id": "command-selection-tests", "passed": False},
+                    }
+                )
+                + "\n",
+                encoding="utf-8",
+            )
+            self.assertEqual(self.run_cli(tmp_path, "improve", "fixture-repo").returncode, 0)
+            target = root / "repos" / "fixture-repo" / "skills" / "build-test-debug" / "SKILL.md"
+            target_before = target.read_bytes()
+
+            unconfirmed = self.run_cli(tmp_path, "proposals", "apply", "prop_001")
+
+            self.assertNotEqual(unconfirmed.returncode, 0)
+            self.assertIn("requires explicit approval", unconfirmed.stderr)
+            self.assertEqual(target.read_bytes(), target_before)
+            metadata_path = root / "proposals" / "prop_001" / "metadata.yml"
+            self.assertEqual(json.loads(metadata_path.read_text(encoding="utf-8"))["status"], "open")
+
+            confirmed = self.run_cli(tmp_path, "proposals", "apply", "prop_001", "--yes")
+
+            self.assertEqual(confirmed.returncode, 0, confirmed.stderr)
+            self.assertIn("Applied proposal prop_001 for fixture-repo", confirmed.stdout)
+            target_after = target.read_text(encoding="utf-8")
+            self.assertIn("Proposal note: review recent trace evidence", target_after)
+            metadata = json.loads(metadata_path.read_text(encoding="utf-8"))
+            self.assertEqual(metadata["status"], "applied")
+            self.assertEqual(metadata["applied_artifacts"], ["repos/fixture-repo/skills/build-test-debug/SKILL.md"])
+            approval = json.loads((root / "repos" / "fixture-repo" / "approval.yml").read_text(encoding="utf-8"))
+            protected = {
+                item["path"]: item["sha256"]
+                for item in approval["protected_artifacts"]
+                if isinstance(item, dict)
+            }
+            self.assertEqual(
+                protected["repos/fixture-repo/skills/build-test-debug/SKILL.md"],
+                hashlib.sha256(target.read_bytes()).hexdigest(),
+            )
+
+    def test_cli_proposals_reject_records_reason_without_mutating_artifacts(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            tmp_path = Path(tmp)
+            create_basic_fixture_repo(tmp_path)
+            init_org_pack(tmp_path, "acme")
+            self.assertEqual(self.run_cli(tmp_path, "repo", "add", "fixture-repo").returncode, 0)
+            self.assertEqual(self.run_cli(tmp_path, "onboard", "fixture-repo").returncode, 0)
+            root = tmp_path / DEFAULT_PACK_DIR
+            trace_path = root / "trace-summaries" / "approval-events.jsonl"
+            trace_path.write_text(
+                json.dumps(
+                    {
+                        "schema_version": 1,
+                        "event_id": "evt_approval_fixture_0001",
+                        "event_type": "approval",
+                        "timestamp": "2026-04-28T00:00:00+00:00",
+                        "repo_id": "fixture-repo",
+                        "pack_ref": "repos/fixture-repo/approval.yml",
+                        "actor": "user",
+                        "adapter": None,
+                        "payload": {"decision": "approved", "rationale": "Need clearer test command guidance"},
+                    }
+                )
+                + "\n",
+                encoding="utf-8",
+            )
+            self.assertEqual(self.run_cli(tmp_path, "improve", "fixture-repo").returncode, 0)
+            target = root / "repos" / "fixture-repo" / "skills" / "build-test-debug" / "SKILL.md"
+            target_before = target.read_bytes()
+
+            reject_result = self.run_cli(
+                tmp_path,
+                "proposals",
+                "reject",
+                "prop_001",
+                "--reason",
+                "Insufficient evidence",
+            )
+
+            self.assertEqual(reject_result.returncode, 0, reject_result.stderr)
+            self.assertIn("Rejected proposal prop_001 for fixture-repo", reject_result.stdout)
+            self.assertEqual(target.read_bytes(), target_before)
+            metadata = json.loads((root / "proposals" / "prop_001" / "metadata.yml").read_text(encoding="utf-8"))
+            self.assertEqual(metadata["status"], "rejected")
+            self.assertEqual(metadata["rejection_reason"], "Insufficient evidence")
 
     def test_cli_onboard_rejects_unknown_repo_without_artifact_mutation(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
