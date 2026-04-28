@@ -2122,6 +2122,27 @@ class RepoOnboardingTests(unittest.TestCase):
             self.assertIn("is not in draft status", reject_result.stderr)
             self.assertEqual((root / "repos" / "fixture-repo" / "approval.yml").read_bytes(), approval_before)
 
+    def test_cli_onboard_refuses_to_overwrite_protected_approved_artifacts(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            tmp_path = Path(tmp)
+            create_basic_fixture_repo(tmp_path)
+            init_org_pack(tmp_path, "acme")
+            self.assertEqual(self.run_cli(tmp_path, "repo", "add", "fixture-repo").returncode, 0)
+            self.assertEqual(self.run_cli(tmp_path, "onboard", "fixture-repo").returncode, 0)
+            self.assertEqual(self.run_cli(tmp_path, "approve", "fixture-repo", "--all").returncode, 0)
+            root = tmp_path / DEFAULT_PACK_DIR
+            protected_path = root / "repos" / "fixture-repo" / "pack-report.md"
+            protected_before = protected_path.read_bytes()
+            config_before = (root / "harness.yml").read_bytes()
+
+            onboard_result = self.run_cli(tmp_path, "onboard", "fixture-repo")
+
+            self.assertNotEqual(onboard_result.returncode, 0)
+            self.assertIn("generation would overwrite protected artifact", onboard_result.stderr)
+            self.assertIn("Sprint 09 proposal flow", onboard_result.stderr)
+            self.assertEqual(protected_path.read_bytes(), protected_before)
+            self.assertEqual((root / "harness.yml").read_bytes(), config_before)
+
     def test_cli_approve_without_all_renders_review_without_mutating_draft(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
             tmp_path = Path(tmp)

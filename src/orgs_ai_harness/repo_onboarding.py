@@ -194,6 +194,8 @@ def _find_repo(root: Path, repo_id: str) -> RepoEntry:
         if entry.id == normalized_repo_id:
             if entry.coverage_status == "external" or entry.external:
                 raise RepoOnboardingError(f"repo is an external dependency reference, not selected coverage: {normalized_repo_id}")
+            if entry.coverage_status == "approved-unverified":
+                _raise_if_generation_would_overwrite_protected(root, entry)
             if entry.coverage_status not in {"selected", "onboarding", "needs-investigation", "draft"} or not entry.active:
                 raise RepoOnboardingError(f"repo is not active selected coverage: {normalized_repo_id}")
             if entry.local_path is None:
@@ -204,6 +206,39 @@ def _find_repo(root: Path, repo_id: str) -> RepoEntry:
             return entry
 
     raise RepoOnboardingError(f"repo id is not registered: {normalized_repo_id}")
+
+
+def _raise_if_generation_would_overwrite_protected(root: Path, entry: RepoEntry) -> None:
+    approval_path = root / "repos" / entry.id / "approval.yml"
+    if not approval_path.is_file():
+        raise RepoOnboardingError(
+            f"repo {entry.id} is approved-unverified but missing approval metadata; "
+            "refusing generation until approval metadata is repaired"
+        )
+    try:
+        approval = json.loads(approval_path.read_text(encoding="utf-8"))
+    except json.JSONDecodeError as exc:
+        raise RepoOnboardingError(
+            f"repo {entry.id} approval metadata is malformed; refusing generation until it is repaired"
+        ) from exc
+    protected = approval.get("protected_artifacts")
+    if not isinstance(protected, list) or not protected:
+        raise RepoOnboardingError(
+            f"repo {entry.id} is approved-unverified but has no protected artifact metadata; "
+            "refusing generation until approval metadata is repaired"
+        )
+    protected_paths = [
+        item["path"]
+        for item in protected
+        if isinstance(item, dict) and isinstance(item.get("path"), str) and item["path"].strip()
+    ]
+    if protected_paths:
+        sample = ", ".join(protected_paths[:3])
+        suffix = "" if len(protected_paths) <= 3 else f", and {len(protected_paths) - 3} more"
+        raise RepoOnboardingError(
+            "generation would overwrite protected artifact(s): "
+            f"{sample}{suffix}. Use the Sprint 09 proposal flow for changes to approved artifacts."
+        )
 
 
 def _resolve_repo_path(root: Path, entry: RepoEntry) -> Path:
