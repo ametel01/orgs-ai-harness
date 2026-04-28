@@ -6,7 +6,7 @@ import argparse
 import sys
 from pathlib import Path
 
-from orgs_ai_harness.approval import ApprovalError, approve_repo, render_approval_review
+from orgs_ai_harness.approval import ApprovalError, approve_repo, reject_repo, render_approval_review
 from orgs_ai_harness.org_pack import (
     OrgPackError,
     attach_org_pack,
@@ -91,6 +91,10 @@ def build_parser() -> argparse.ArgumentParser:
     )
     approve_parser.add_argument("--rationale", help="Human rationale to record in the approval trace")
 
+    reject_parser = subparsers.add_parser("reject", help="Reject a generated draft pack")
+    reject_parser.add_argument("repo_id", help="Registered repo id to reject")
+    reject_parser.add_argument("--reason", help="Human rejection reason to record in the approval trace")
+
     return parser
 
 
@@ -159,6 +163,12 @@ def main(argv: list[str] | None = None) -> int:
                 f"Approved {len(result.approved_artifacts)} artifact(s) for repo {result.repo_id}; "
                 f"excluded={len(result.excluded_artifacts)}; status=approved-unverified"
             )
+            return 0
+
+        if args.command == "reject":
+            root = resolve_default_root(Path.cwd())
+            result = reject_repo(root, args.repo_id, rationale=args.reason)
+            print(f"Rejected draft pack for repo {result.repo_id}; status=needs-investigation")
             return 0
 
         if args.command == "repo":

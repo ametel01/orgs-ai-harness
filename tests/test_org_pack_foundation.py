@@ -2071,6 +2071,57 @@ class RepoOnboardingTests(unittest.TestCase):
             self.assertEqual((root / "harness.yml").read_bytes(), config_before)
             self.assertFalse((root / "repos" / "fixture-repo" / "approval.yml").exists())
 
+    def test_cli_reject_records_trace_and_preserves_draft_artifacts(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            tmp_path = Path(tmp)
+            create_basic_fixture_repo(tmp_path)
+            init_org_pack(tmp_path, "acme")
+            self.assertEqual(self.run_cli(tmp_path, "repo", "add", "fixture-repo").returncode, 0)
+            self.assertEqual(self.run_cli(tmp_path, "onboard", "fixture-repo").returncode, 0)
+            root = tmp_path / DEFAULT_PACK_DIR
+            artifact_root = root / "repos" / "fixture-repo"
+            draft_file = artifact_root / "skills" / "build-test-debug" / "SKILL.md"
+            draft_before = draft_file.read_bytes()
+
+            reject_result = self.run_cli(tmp_path, "reject", "fixture-repo", "--reason", "Needs manual review")
+
+            self.assertEqual(reject_result.returncode, 0, reject_result.stderr)
+            self.assertIn("status=needs-investigation", reject_result.stdout)
+            self.assertEqual(draft_file.read_bytes(), draft_before)
+            rejection = json.loads((artifact_root / "approval.yml").read_text(encoding="utf-8"))
+            self.assertEqual(rejection["decision"], "rejected")
+            self.assertEqual(rejection["status"], "rejected")
+            self.assertEqual(rejection["rationale"], "Needs manual review")
+            self.assertEqual(rejection["approved_artifacts"], [])
+            self.assertIn("repos/fixture-repo/pack-report.md", rejection["excluded_artifacts"])
+            entries = load_repo_entries(root / "harness.yml")
+            self.assertEqual(entries[0].coverage_status, "needs-investigation")
+            trace_path = root / "trace-summaries" / "approval-events.jsonl"
+            trace_events = [json.loads(line) for line in trace_path.read_text(encoding="utf-8").splitlines()]
+            self.assertEqual(trace_events[-1]["payload"]["decision"], "rejected")
+            self.assertEqual(trace_events[-1]["payload"]["rationale"], "Needs manual review")
+
+            validate_result = self.run_cli(tmp_path, "validate", "fixture-repo")
+
+            self.assertEqual(validate_result.returncode, 0, validate_result.stderr)
+
+    def test_cli_reject_approved_pack_fails_without_mutation(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            tmp_path = Path(tmp)
+            create_basic_fixture_repo(tmp_path)
+            init_org_pack(tmp_path, "acme")
+            self.assertEqual(self.run_cli(tmp_path, "repo", "add", "fixture-repo").returncode, 0)
+            self.assertEqual(self.run_cli(tmp_path, "onboard", "fixture-repo").returncode, 0)
+            self.assertEqual(self.run_cli(tmp_path, "approve", "fixture-repo", "--all").returncode, 0)
+            root = tmp_path / DEFAULT_PACK_DIR
+            approval_before = (root / "repos" / "fixture-repo" / "approval.yml").read_bytes()
+
+            reject_result = self.run_cli(tmp_path, "reject", "fixture-repo")
+
+            self.assertNotEqual(reject_result.returncode, 0)
+            self.assertIn("is not in draft status", reject_result.stderr)
+            self.assertEqual((root / "repos" / "fixture-repo" / "approval.yml").read_bytes(), approval_before)
+
     def test_cli_approve_without_all_renders_review_without_mutating_draft(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
             tmp_path = Path(tmp)

@@ -24,6 +24,13 @@ class ApprovalResult:
     trace_path: Path
 
 
+@dataclass(frozen=True)
+class RejectionResult:
+    repo_id: str
+    rejection_path: Path
+    trace_path: Path
+
+
 APPROVAL_FILE = "approval.yml"
 APPROVAL_TRACE_FILE = "approval-events.jsonl"
 
@@ -144,6 +151,50 @@ def render_approval_review(root: Path, repo_id: str) -> str:
         f"- harness approve {entry.id} --exclude <artifact>",
     ]
     return "\n".join(lines) + "\n"
+
+
+def reject_repo(root: Path, repo_id: str, *, rationale: str | None = None) -> RejectionResult:
+    """Reject a generated draft pack while preserving its artifacts."""
+
+    root = root.resolve()
+    entry = _find_draft_repo(root, repo_id)
+    artifact_root = root / "repos" / entry.id
+    artifacts = _artifact_inventory(root, artifact_root)
+    if not artifacts:
+        raise ApprovalError(f"repo {entry.id} has no generated draft artifacts to reject")
+
+    timestamp = _timestamp()
+    rejection_path = artifact_root / APPROVAL_FILE
+    pack_ref = rejection_path.relative_to(root).as_posix()
+    rejection_rationale = rationale.strip() if rationale is not None else "Rejected by user"
+    if not rejection_rationale:
+        raise ApprovalError("rejection rationale cannot be empty")
+    rejection_metadata = {
+        "schema_version": 1,
+        "repo_id": entry.id,
+        "status": "rejected",
+        "decision": "rejected",
+        "pack_ref": pack_ref,
+        "actor": "user",
+        "timestamp": timestamp,
+        "rationale": rejection_rationale,
+        "approved_artifacts": [],
+        "excluded_artifacts": artifacts,
+        "protected_artifacts": [],
+        "verified": False,
+    }
+    rejection_path.write_text(json.dumps(rejection_metadata, indent=2) + "\n", encoding="utf-8")
+    _update_repo_approval_state(root, entry.id, "needs-investigation", pack_ref)
+    trace_path = _append_approval_event(
+        root,
+        repo_id=entry.id,
+        pack_ref=pack_ref,
+        timestamp=timestamp,
+        decision="rejected",
+        excluded_artifacts=artifacts,
+        rationale=rejection_rationale,
+    )
+    return RejectionResult(repo_id=entry.id, rejection_path=rejection_path, trace_path=trace_path)
 
 
 def _find_draft_repo(root: Path, repo_id: str) -> RepoEntry:
