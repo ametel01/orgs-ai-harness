@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from dataclasses import replace
+import json
 import os
 import subprocess
 import sys
@@ -48,6 +49,16 @@ def create_sensitive_fixture_files(repo_path: Path) -> None:
     (repo_path / ".env.production").write_text("PROD_SECRET=do-not-leak-prod\n", encoding="utf-8")
     (repo_path / "private.pem").write_text("PRIVATE KEY do-not-leak-key\n", encoding="utf-8")
     (repo_path / "config.local.json").write_text('{"token":"do-not-leak-local"}\n', encoding="utf-8")
+
+
+def add_rich_fixture_evidence(repo_path: Path) -> None:
+    (repo_path / ".github" / "workflows").mkdir(parents=True)
+    (repo_path / ".github" / "workflows" / "ci.yml").write_text("name: CI\n", encoding="utf-8")
+    (repo_path / "scripts").mkdir()
+    (repo_path / "scripts" / "test.sh").write_text("pytest\n", encoding="utf-8")
+    (repo_path / "pytest.ini").write_text("[pytest]\n", encoding="utf-8")
+    (repo_path / "package-lock.json").write_text('{"lockfileVersion":3}\n', encoding="utf-8")
+    (repo_path / "AGENTS.md").write_text("# Agent notes\n", encoding="utf-8")
 
 
 class OrgPackFoundationTests(unittest.TestCase):
@@ -1863,6 +1874,58 @@ class RepoOnboardingTests(unittest.TestCase):
 
             self.assertEqual(validate_result.returncode, 0, validate_result.stderr)
             self.assertIn("Validation passed for fixture-repo", validate_result.stdout)
+
+    def test_cli_onboard_writes_hypothesis_map_from_mixed_evidence_and_seed_context(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            tmp_path = Path(tmp)
+            repo_path = create_basic_fixture_repo(tmp_path)
+            add_rich_fixture_evidence(repo_path)
+            init_org_pack(tmp_path, "acme")
+            add_result = self.run_cli(
+                tmp_path,
+                "repo",
+                "add",
+                "fixture-repo",
+                "--purpose",
+                "Core API service",
+                "--owner",
+                "platform",
+            )
+            self.assertEqual(add_result.returncode, 0, add_result.stderr)
+
+            scan_result = self.run_cli(tmp_path, "onboard", "fixture-repo", "--scan-only")
+
+            self.assertEqual(scan_result.returncode, 0, scan_result.stderr)
+            artifact_root = tmp_path / DEFAULT_PACK_DIR / "repos" / "fixture-repo"
+            hypothesis_map_path = artifact_root / "scan" / "hypothesis-map.yml"
+            self.assertTrue(hypothesis_map_path.is_file())
+            hypothesis_map = json.loads(hypothesis_map_path.read_text(encoding="utf-8"))
+            self.assertEqual(hypothesis_map["seed_context"]["purpose"]["value"], "Core API service")
+            self.assertEqual(hypothesis_map["seed_context"]["purpose"]["source"], "manual repo registration")
+            self.assertEqual(hypothesis_map["seed_context"]["owner"]["value"], "platform")
+            self.assertIn("README.md", hypothesis_map["evidence_categories"]["readme"])
+            self.assertIn("package.json", hypothesis_map["evidence_categories"]["package_manifest"])
+            self.assertIn(".github/workflows/ci.yml", hypothesis_map["evidence_categories"]["ci_config"])
+            self.assertIn("scripts/test.sh", hypothesis_map["evidence_categories"]["script"])
+            self.assertIn("pytest.ini", hypothesis_map["evidence_categories"]["test_config"])
+            self.assertIn("AGENTS.md", hypothesis_map["evidence_categories"]["agent_docs"])
+            self.assertIn("hypothesis-map.yml", (artifact_root / "onboarding-summary.md").read_text(encoding="utf-8"))
+
+    def test_cli_onboard_hypothesis_map_marks_absent_evidence_as_unknown(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            tmp_path = Path(tmp)
+            (tmp_path / "empty-repo").mkdir()
+            init_org_pack(tmp_path, "acme")
+            self.assertEqual(self.run_cli(tmp_path, "repo", "add", "empty-repo").returncode, 0)
+
+            scan_result = self.run_cli(tmp_path, "onboard", "empty-repo", "--scan-only")
+
+            self.assertEqual(scan_result.returncode, 0, scan_result.stderr)
+            hypothesis_map_path = tmp_path / DEFAULT_PACK_DIR / "repos" / "empty-repo" / "scan" / "hypothesis-map.yml"
+            hypothesis_map = json.loads(hypothesis_map_path.read_text(encoding="utf-8"))
+            unknown_hypotheses = [item for item in hypothesis_map["hypotheses"] if item["unknown"]]
+            self.assertTrue(unknown_hypotheses)
+            self.assertIn("unk_001", hypothesis_map["unknown_refs"])
 
     def test_cli_onboard_requires_scan_only_without_artifact_mutation(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
