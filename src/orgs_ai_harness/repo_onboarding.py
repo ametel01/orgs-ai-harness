@@ -5,6 +5,7 @@ from __future__ import annotations
 from dataclasses import dataclass
 import json
 from pathlib import Path
+import subprocess
 
 from orgs_ai_harness.repo_registry import RepoEntry, load_repo_entries, update_repo_coverage_status
 
@@ -75,6 +76,7 @@ def scan_repo_only(root: Path, repo_id: str) -> OnboardingResult:
             {
                 "repo_id": entry.id,
                 "repo_path": entry.local_path,
+                "repo_source_commit": _repo_source_commit(repo_path),
                 "scanned_paths": scanned,
                 "skipped_paths": skipped,
             },
@@ -263,6 +265,19 @@ def _resolve_repo_path(root: Path, entry: RepoEntry) -> Path:
     if not repo_path.is_dir():
         raise RepoOnboardingError(f"repo path is not a directory: {repo_path}; repair it with 'harness repo set-path'")
     return repo_path
+
+
+def _repo_source_commit(repo_path: Path) -> str:
+    result = subprocess.run(
+        ["git", "rev-parse", "HEAD"],
+        cwd=repo_path,
+        text=True,
+        capture_output=True,
+        check=False,
+    )
+    if result.returncode == 0:
+        return result.stdout.strip()
+    return "unknown"
 
 
 def is_sensitive_path(relative_path: str) -> bool:

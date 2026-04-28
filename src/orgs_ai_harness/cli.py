@@ -23,6 +23,7 @@ from orgs_ai_harness.proposals import (
     list_proposals,
     reject_proposal,
     render_proposal_show,
+    refresh_repo,
 )
 from orgs_ai_harness.repo_registry import (
     RepoEntry,
@@ -135,6 +136,9 @@ def build_parser() -> argparse.ArgumentParser:
 
     improve_parser = subparsers.add_parser("improve", help="Create evidence-backed improvement proposals")
     improve_parser.add_argument("repo_id", help="Registered repo id to improve")
+
+    refresh_parser = subparsers.add_parser("refresh", help="Propose updates after source changes")
+    refresh_parser.add_argument("repo_id", help="Registered repo id to refresh")
 
     proposals_parser = subparsers.add_parser("proposals", help="Review generated proposals")
     proposals_subparsers = proposals_parser.add_subparsers(dest="proposals_command", required=True)
@@ -271,6 +275,18 @@ def main(argv: list[str] | None = None) -> int:
                 print(f"No proposal for {result.repo_id}; {result.reason}.")
                 return 0
             print(f"Created proposal {result.proposal_id} for {result.repo_id}: {result.proposal_root}")
+            return 0
+
+        if args.command == "refresh":
+            root = resolve_default_root(Path.cwd())
+            result = refresh_repo(root, args.repo_id)
+            if result.proposal_id is None:
+                print(f"No proposal for {result.repo_id}; {result.reason}.")
+                return 0
+            print(
+                f"Created refresh proposal {result.proposal_id} for {result.repo_id}; "
+                f"{result.previous_commit}..{result.current_commit}"
+            )
             return 0
 
         if args.command == "proposals":

@@ -8,6 +8,7 @@ import hashlib
 import json
 from pathlib import Path
 import re
+import subprocess
 
 from orgs_ai_harness.repo_registry import RepoEntry, load_repo_entries
 
@@ -21,6 +22,16 @@ class ImproveResult:
     repo_id: str
     proposal_id: str | None
     proposal_root: Path | None
+    reason: str | None = None
+
+
+@dataclass(frozen=True)
+class RefreshResult:
+    repo_id: str
+    proposal_id: str | None
+    proposal_root: Path | None
+    previous_commit: str
+    current_commit: str
     reason: str | None = None
 
 
@@ -81,6 +92,79 @@ def improve_repo(root: Path, repo_id: str) -> ImproveResult:
     (proposal_root / "metadata.yml").write_text(json.dumps(metadata, indent=2, sort_keys=True) + "\n", encoding="utf-8")
 
     return ImproveResult(repo_id=entry.id, proposal_id=proposal_id, proposal_root=proposal_root)
+
+
+def refresh_repo(root: Path, repo_id: str) -> RefreshResult:
+    """Detect source changes and create a refresh proposal without mutating accepted artifacts."""
+
+    root = root.resolve()
+    entry = _find_repo(root, repo_id)
+    if entry.local_path is None:
+        raise ProposalError(f"repo {entry.id} has no local path; run 'harness repo set-path'")
+    previous_commit = _last_recorded_source_commit(root, entry.id)
+    current_commit = _current_source_commit(root, entry)
+    if previous_commit == "unknown":
+        return RefreshResult(
+            repo_id=entry.id,
+            proposal_id=None,
+            proposal_root=None,
+            previous_commit=previous_commit,
+            current_commit=current_commit,
+            reason="no recorded onboarding source commit",
+        )
+    if current_commit == previous_commit:
+        return RefreshResult(
+            repo_id=entry.id,
+            proposal_id=None,
+            proposal_root=None,
+            previous_commit=previous_commit,
+            current_commit=current_commit,
+            reason="source unchanged",
+        )
+
+    proposal_id = _next_proposal_id(root / "proposals")
+    proposal_root = root / "proposals" / proposal_id
+    proposal_root.mkdir(parents=True)
+    affected_evals = _affected_eval_ids(root, entry.id)
+    target = (root / "repos" / entry.id / "onboarding-summary.md").relative_to(root).as_posix()
+    metadata = {
+        "schema_version": 1,
+        "id": proposal_id,
+        "repo_id": entry.id,
+        "status": "open",
+        "risk": "medium",
+        "proposal_type": "onboarding summary updates",
+        "target_artifacts": [target],
+        "affected_evals": affected_evals,
+        "evidence": [f"refresh:{entry.id}:{previous_commit}..{current_commit}"],
+        "created_from": ["source_refresh"],
+        "created_at": datetime.now(UTC).isoformat(),
+        "previous_source_commit": previous_commit,
+        "current_source_commit": current_commit,
+    }
+    evidence = [
+        {
+            "created_from": "source_refresh",
+            "repo_id": entry.id,
+            "previous_source_commit": previous_commit,
+            "current_source_commit": current_commit,
+            "affected_evals": affected_evals,
+        }
+    ]
+    (proposal_root / "summary.md").write_text(_render_refresh_summary(metadata), encoding="utf-8")
+    (proposal_root / "evidence.jsonl").write_text(
+        "".join(json.dumps(item, sort_keys=True) + "\n" for item in evidence),
+        encoding="utf-8",
+    )
+    (proposal_root / "patch.diff").write_text(_render_patch(target), encoding="utf-8")
+    _write_metadata(proposal_root, metadata)
+    return RefreshResult(
+        repo_id=entry.id,
+        proposal_id=proposal_id,
+        proposal_root=proposal_root,
+        previous_commit=previous_commit,
+        current_commit=current_commit,
+    )
 
 
 def list_proposals(root: Path) -> tuple[ProposalSummary, ...]:
@@ -323,6 +407,22 @@ def _render_summary(metadata: dict[str, object], evidence: list[dict[str, object
     ) + "\n"
 
 
+def _render_refresh_summary(metadata: dict[str, object]) -> str:
+    return "\n".join(
+        [
+            f"# Proposal {metadata['id']}: refresh updates for {metadata['repo_id']}",
+            "",
+            f"- Status: {metadata['status']}",
+            f"- Risk: {metadata['risk']}",
+            f"- Previous Source Commit: {metadata['previous_source_commit']}",
+            f"- Current Source Commit: {metadata['current_source_commit']}",
+            "",
+            "## Rationale",
+            "The repository source changed since the last recorded onboarding scan. Review the proposed update before mutating accepted artifacts.",
+        ]
+    ) + "\n"
+
+
 def _render_patch(target: str) -> str:
     return "\n".join(
         [
@@ -330,7 +430,7 @@ def _render_patch(target: str) -> str:
             f"--- a/{target}",
             f"+++ b/{target}",
             "@@",
-            "+<!-- Proposal note: review recent trace evidence before changing accepted commands. -->",
+            "+<!-- Proposal note: review recent trace evidence before changing accepted knowledge. -->",
             "",
         ]
     )
@@ -455,6 +555,59 @@ def _update_approval_hashes(root: Path, repo_id: str, changed_artifacts: list[st
         artifact_path = root / str(item["path"])
         item["sha256"] = hashlib.sha256(artifact_path.read_bytes()).hexdigest()
     approval_path.write_text(json.dumps(approval, indent=2, sort_keys=True) + "\n", encoding="utf-8")
+
+
+def _last_recorded_source_commit(root: Path, repo_id: str) -> str:
+    for path in (
+        root / "repos" / repo_id / "scan" / "scan-manifest.yml",
+        root / "repos" / repo_id / "eval-report.yml",
+    ):
+        if not path.is_file():
+            continue
+        try:
+            artifact = json.loads(path.read_text(encoding="utf-8"))
+        except json.JSONDecodeError:
+            continue
+        if not isinstance(artifact, dict):
+            continue
+        value = artifact.get("repo_source_commit")
+        if isinstance(value, str) and value.strip():
+            return value
+    return "unknown"
+
+
+def _current_source_commit(root: Path, entry: RepoEntry) -> str:
+    assert entry.local_path is not None
+    repo_path = (root / entry.local_path).resolve()
+    result = subprocess.run(
+        ["git", "rev-parse", "HEAD"],
+        cwd=repo_path,
+        text=True,
+        capture_output=True,
+        check=False,
+    )
+    if result.returncode == 0:
+        return result.stdout.strip()
+    return "unknown"
+
+
+def _affected_eval_ids(root: Path, repo_id: str) -> list[str]:
+    evals_path = root / "repos" / repo_id / "evals" / "onboarding.yml"
+    if not evals_path.is_file():
+        return []
+    try:
+        artifact = json.loads(evals_path.read_text(encoding="utf-8"))
+    except json.JSONDecodeError:
+        return []
+    tasks = artifact.get("tasks") if isinstance(artifact, dict) else None
+    if not isinstance(tasks, list):
+        return []
+    eval_ids = [
+        task["id"]
+        for task in tasks
+        if isinstance(task, dict) and isinstance(task.get("id"), str) and task["id"].strip()
+    ]
+    return sorted(eval_ids)
 
 
 def _first_summary_line(path: Path) -> str:

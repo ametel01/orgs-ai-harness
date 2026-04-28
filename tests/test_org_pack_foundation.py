@@ -1843,6 +1843,35 @@ class RepoOnboardingTests(unittest.TestCase):
             check=False,
         )
 
+    def commit_fixture_repo(self, repo_path: Path, message: str) -> str:
+        if not (repo_path / ".git").is_dir():
+            subprocess.run(["git", "init"], cwd=repo_path, text=True, capture_output=True, check=True)
+        subprocess.run(["git", "add", "."], cwd=repo_path, text=True, capture_output=True, check=True)
+        subprocess.run(
+            [
+                "git",
+                "-c",
+                "user.name=Harness Test",
+                "-c",
+                "user.email=harness@example.test",
+                "commit",
+                "-m",
+                message,
+            ],
+            cwd=repo_path,
+            text=True,
+            capture_output=True,
+            check=True,
+        )
+        result = subprocess.run(
+            ["git", "rev-parse", "HEAD"],
+            cwd=repo_path,
+            text=True,
+            capture_output=True,
+            check=True,
+        )
+        return result.stdout.strip()
+
     def prepare_scanned_fixture(self, tmp_path: Path) -> Path:
         create_basic_fixture_repo(tmp_path)
         init_org_pack(tmp_path, "acme")
@@ -2977,6 +3006,59 @@ class RepoOnboardingTests(unittest.TestCase):
             metadata = json.loads((root / "proposals" / "prop_001" / "metadata.yml").read_text(encoding="utf-8"))
             self.assertEqual(metadata["status"], "rejected")
             self.assertEqual(metadata["rejection_reason"], "Insufficient evidence")
+
+    def test_cli_refresh_noops_when_source_commit_is_unchanged(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            tmp_path = Path(tmp)
+            repo_path = create_basic_fixture_repo(tmp_path)
+            source_commit = self.commit_fixture_repo(repo_path, "initial")
+            init_org_pack(tmp_path, "acme")
+            self.assertEqual(self.run_cli(tmp_path, "repo", "add", "fixture-repo").returncode, 0)
+            self.assertEqual(self.run_cli(tmp_path, "onboard", "fixture-repo").returncode, 0)
+            root = tmp_path / DEFAULT_PACK_DIR
+            manifest = json.loads((root / "repos" / "fixture-repo" / "scan" / "scan-manifest.yml").read_text(encoding="utf-8"))
+            self.assertEqual(manifest["repo_source_commit"], source_commit)
+
+            refresh_result = self.run_cli(tmp_path, "refresh", "fixture-repo")
+
+            self.assertEqual(refresh_result.returncode, 0, refresh_result.stderr)
+            self.assertIn("No proposal for fixture-repo; source unchanged.", refresh_result.stdout)
+            self.assertFalse((root / "proposals" / "prop_001").exists())
+
+    def test_cli_refresh_changed_source_creates_proposal_only(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            tmp_path = Path(tmp)
+            repo_path = create_basic_fixture_repo(tmp_path)
+            previous_commit = self.commit_fixture_repo(repo_path, "initial")
+            init_org_pack(tmp_path, "acme")
+            self.assertEqual(self.run_cli(tmp_path, "repo", "add", "fixture-repo").returncode, 0)
+            self.assertEqual(self.run_cli(tmp_path, "onboard", "fixture-repo").returncode, 0)
+            self.assertEqual(self.run_cli(tmp_path, "approve", "fixture-repo", "--all").returncode, 0)
+            root = tmp_path / DEFAULT_PACK_DIR
+            approval = json.loads((root / "repos" / "fixture-repo" / "approval.yml").read_text(encoding="utf-8"))
+            protected_before = {
+                path: (root / path).read_bytes()
+                for path in approval["approved_artifacts"]
+                if isinstance(path, str)
+            }
+            (repo_path / "README.md").write_text("# Fixture Repo\n\nChanged service notes.\n", encoding="utf-8")
+            current_commit = self.commit_fixture_repo(repo_path, "change readme")
+
+            refresh_result = self.run_cli(tmp_path, "refresh", "fixture-repo")
+
+            self.assertEqual(refresh_result.returncode, 0, refresh_result.stderr)
+            self.assertIn("Created refresh proposal prop_001 for fixture-repo", refresh_result.stdout)
+            proposal_root = root / "proposals" / "prop_001"
+            metadata = json.loads((proposal_root / "metadata.yml").read_text(encoding="utf-8"))
+            self.assertEqual(metadata["repo_id"], "fixture-repo")
+            self.assertEqual(metadata["status"], "open")
+            self.assertEqual(metadata["proposal_type"], "onboarding summary updates")
+            self.assertEqual(metadata["previous_source_commit"], previous_commit)
+            self.assertEqual(metadata["current_source_commit"], current_commit)
+            self.assertTrue(metadata["affected_evals"])
+            self.assertTrue((proposal_root / "evidence.jsonl").is_file())
+            for path, before in protected_before.items():
+                self.assertEqual((root / path).read_bytes(), before, path)
 
     def test_cli_onboard_rejects_unknown_repo_without_artifact_mutation(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
