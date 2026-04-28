@@ -2026,6 +2026,26 @@ class RepoOnboardingTests(unittest.TestCase):
 
             self.assertEqual(validate_result.returncode, 0, validate_result.stderr)
 
+    def test_validate_approved_unverified_requires_warning_and_unverified_flag(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            tmp_path = Path(tmp)
+            create_basic_fixture_repo(tmp_path)
+            init_org_pack(tmp_path, "acme")
+            self.assertEqual(self.run_cli(tmp_path, "repo", "add", "fixture-repo").returncode, 0)
+            self.assertEqual(self.run_cli(tmp_path, "onboard", "fixture-repo").returncode, 0)
+            self.assertEqual(self.run_cli(tmp_path, "approve", "fixture-repo", "--all").returncode, 0)
+            approval_path = tmp_path / DEFAULT_PACK_DIR / "repos" / "fixture-repo" / "approval.yml"
+            approval = json.loads(approval_path.read_text(encoding="utf-8"))
+            approval["warnings"] = []
+            approval["verified"] = True
+            approval_path.write_text(json.dumps(approval), encoding="utf-8")
+
+            validate_result = self.run_cli(tmp_path, "validate", "fixture-repo")
+
+            self.assertNotEqual(validate_result.returncode, 0)
+            self.assertIn("verified must be false", validate_result.stderr)
+            self.assertIn("approved-unverified warning metadata", validate_result.stderr)
+
     def test_cli_approve_with_exclusion_protects_only_accepted_artifacts(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
             tmp_path = Path(tmp)
@@ -2474,6 +2494,44 @@ class RepoOnboardingTests(unittest.TestCase):
 
             self.assertNotEqual(validate_result.returncode, 0)
             self.assertIn("field review_required must be true", validate_result.stderr)
+
+    def test_validate_repo_reports_missing_generated_script_command_permission(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            tmp_path = Path(tmp)
+            create_basic_fixture_repo(tmp_path)
+            init_org_pack(tmp_path, "acme")
+            self.assertEqual(self.run_cli(tmp_path, "repo", "add", "fixture-repo").returncode, 0)
+            self.assertEqual(self.run_cli(tmp_path, "onboard", "fixture-repo").returncode, 0)
+            manifest_path = tmp_path / DEFAULT_PACK_DIR / "repos" / "fixture-repo" / "scripts" / "manifest.yml"
+            manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
+            manifest["command_permissions"] = [
+                permission
+                for permission in manifest["command_permissions"]
+                if permission["command"] != "python scripts/check-pack-shape.py"
+            ]
+            manifest_path.write_text(json.dumps(manifest), encoding="utf-8")
+
+            validate_result = self.run_cli(tmp_path, "validate", "fixture-repo")
+
+            self.assertNotEqual(validate_result.returncode, 0)
+            self.assertIn("missing command permission record for generated script", validate_result.stderr)
+
+    def test_validate_repo_reports_malformed_command_permission(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            tmp_path = Path(tmp)
+            create_basic_fixture_repo(tmp_path)
+            init_org_pack(tmp_path, "acme")
+            self.assertEqual(self.run_cli(tmp_path, "repo", "add", "fixture-repo").returncode, 0)
+            self.assertEqual(self.run_cli(tmp_path, "onboard", "fixture-repo").returncode, 0)
+            manifest_path = tmp_path / DEFAULT_PACK_DIR / "repos" / "fixture-repo" / "scripts" / "manifest.yml"
+            manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
+            manifest["command_permissions"][0]["local_only"] = False
+            manifest_path.write_text(json.dumps(manifest), encoding="utf-8")
+
+            validate_result = self.run_cli(tmp_path, "validate", "fixture-repo")
+
+            self.assertNotEqual(validate_result.returncode, 0)
+            self.assertIn("command_permissions item 1 field local_only must be true", validate_result.stderr)
 
     def test_onboard_marks_one_repo_org_skills_as_candidates(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:

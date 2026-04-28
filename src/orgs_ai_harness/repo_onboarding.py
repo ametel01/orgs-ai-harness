@@ -148,7 +148,21 @@ def onboard_repo(root: Path, repo_id: str) -> OnboardingResult:
                         "deterministic": True,
                         "local_only": True,
                     }
-                ]
+                ],
+                "command_permissions": [
+                    {
+                        "command": "python scripts/check-pack-shape.py",
+                        "reason": "Run the deterministic local draft pack shape check.",
+                        "review_required": True,
+                        "local_only": True,
+                    },
+                    {
+                        "command": f"harness validate {entry.id}",
+                        "reason": "Validate generated repo onboarding and approval metadata locally.",
+                        "review_required": True,
+                        "local_only": True,
+                    },
+                ],
             },
             indent=2,
         )

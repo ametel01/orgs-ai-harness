@@ -302,9 +302,15 @@ def _requested_commands(artifact_root: Path, repo_id: str) -> list[str]:
     if not isinstance(scripts, list):
         commands.append("scripts/manifest.yml does not contain a scripts list")
         return commands
+    permissions = manifest.get("command_permissions")
+    if isinstance(permissions, list):
+        for permission in permissions:
+            if isinstance(permission, dict) and isinstance(permission.get("command"), str):
+                commands.append(permission["command"])
+        return commands
     for script in scripts:
         if isinstance(script, dict) and isinstance(script.get("path"), str):
-            commands.append(f"python {artifact_root.name}/{script['path']}")
+            commands.append(f"python {script['path']}")
     return commands
 
 

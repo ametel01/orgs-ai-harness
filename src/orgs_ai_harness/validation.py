@@ -406,6 +406,7 @@ def _validate_script_manifest(path: Path, artifact_root: Path, root: Path, error
     if not isinstance(scripts, list):
         errors.append(f"scripts/manifest.yml field scripts must be a list: {path.relative_to(root)}")
         return
+    script_paths: list[str] = []
     for index, script in enumerate(scripts, start=1):
         if not isinstance(script, dict):
             errors.append(f"scripts/manifest.yml item {index} must be an object")
@@ -414,12 +415,53 @@ def _validate_script_manifest(path: Path, artifact_root: Path, root: Path, error
         if not isinstance(relative_path, str) or not relative_path.strip():
             errors.append(f"scripts/manifest.yml item {index} field path must be a non-empty string")
             continue
+        script_paths.append(relative_path)
         script_path = artifact_root / relative_path
         if not script_path.is_file():
             errors.append(f"scripts/manifest.yml item {index} references missing script: {relative_path}")
         for field in ("review_required", "deterministic", "local_only"):
             if script.get(field) is not True:
                 errors.append(f"scripts/manifest.yml item {index} field {field} must be true")
+    _validate_command_permissions(artifact, script_paths, artifact_root, errors)
+
+
+def _validate_command_permissions(
+    artifact: dict[str, object],
+    script_paths: list[str],
+    artifact_root: Path,
+    errors: list[str],
+) -> None:
+    permissions = artifact.get("command_permissions")
+    if not isinstance(permissions, list) or not permissions:
+        errors.append(f"scripts/manifest.yml field command_permissions must be a non-empty list")
+        return
+
+    commands: set[str] = set()
+    for index, permission in enumerate(permissions, start=1):
+        if not isinstance(permission, dict):
+            errors.append(f"scripts/manifest.yml command_permissions item {index} must be an object")
+            continue
+        command = permission.get("command")
+        if not isinstance(command, str) or not command.strip():
+            errors.append(f"scripts/manifest.yml command_permissions item {index} field command must be a non-empty string")
+        else:
+            commands.add(command)
+        if not isinstance(permission.get("reason"), str) or not str(permission.get("reason")).strip():
+            errors.append(f"scripts/manifest.yml command_permissions item {index} field reason must be a non-empty string")
+        for field in ("review_required", "local_only"):
+            if permission.get(field) is not True:
+                errors.append(f"scripts/manifest.yml command_permissions item {index} field {field} must be true")
+
+    for script_path in script_paths:
+        expected = f"python {script_path}"
+        if expected not in commands:
+            errors.append(f"scripts/manifest.yml missing command permission record for generated script: {expected}")
+    expected_validate = f"harness validate {artifact_root.name}"
+    if expected_validate not in commands:
+        errors.append(
+            "scripts/manifest.yml missing command permission record for local validation command: "
+            f"{expected_validate}"
+        )
 
 
 def _validate_pack_report(path: Path, root: Path, errors: list[str]) -> None:
