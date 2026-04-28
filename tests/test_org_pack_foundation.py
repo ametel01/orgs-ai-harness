@@ -12,6 +12,7 @@ from pathlib import Path
 from orgs_ai_harness.cache_manager import export_cached_pack, refresh_cache
 from orgs_ai_harness.config import load_harness_config, parse_harness_config, save_harness_config
 from orgs_ai_harness.eval_replay import AdapterAnswer, rediscovery_cost, score_answer
+from orgs_ai_harness.explain import render_explain
 from orgs_ai_harness.org_pack import (
     ATTACHMENT_FILE,
     DEFAULT_PACK_DIR,
@@ -2206,6 +2207,61 @@ class RepoOnboardingTests(unittest.TestCase):
             self.assertTrue(
                 any(warning["code"] == "approved-unverified" for warning in status["warnings"])
             )
+
+    def test_explain_renders_covered_repo_state_from_cache_and_artifacts(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            tmp_path = Path(tmp)
+            create_basic_fixture_repo(tmp_path)
+            init_org_pack(tmp_path, "acme")
+            self.assertEqual(
+                self.run_cli(tmp_path, "repo", "add", "fixture-repo", "--purpose", "Fixture service").returncode,
+                0,
+            )
+            self.assertEqual(self.run_cli(tmp_path, "onboard", "fixture-repo").returncode, 0)
+            self.assertEqual(self.run_cli(tmp_path, "approve", "fixture-repo", "--all").returncode, 0)
+            root = tmp_path / DEFAULT_PACK_DIR
+            refresh_cache(root, "fixture-repo")
+            self.assertEqual(self.run_cli(tmp_path, "eval", "fixture-repo", "--development").returncode, 0)
+
+            output = render_explain(root, "fixture-repo")
+
+            self.assertIn("Explain: fixture-repo", output)
+            self.assertIn("Coverage", output)
+            self.assertIn("- Why: Fixture service", output)
+            self.assertIn("- Lifecycle Status: approved-unverified", output)
+            self.assertIn("Cache", output)
+            self.assertIn("- Status: present", output)
+            self.assertIn("Approved Skills", output)
+            self.assertIn("build-test-debug; triggers=test command, build failure, debug repo setup", output)
+            self.assertIn("Required Evals", output)
+            self.assertIn("- Last Pass Rate:", output)
+            self.assertIn("repo-knowledge-readme (repo knowledge)", output)
+            self.assertIn("Unresolved Unknowns", output)
+            self.assertIn("unk_001: Which command is the narrowest reliable unit test command? [blocking]", output)
+            self.assertIn("Boundary Decisions", output)
+            self.assertIn("Recent Proposals", output)
+
+            cli_result = self.run_cli(tmp_path, "explain", "fixture-repo")
+
+            self.assertEqual(cli_result.returncode, 0, cli_result.stderr)
+            self.assertEqual(cli_result.stdout, output)
+
+    def test_explain_renders_explicit_empty_states_before_cache_and_eval(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            tmp_path = Path(tmp)
+            create_basic_fixture_repo(tmp_path)
+            init_org_pack(tmp_path, "acme")
+            self.assertEqual(self.run_cli(tmp_path, "repo", "add", "fixture-repo").returncode, 0)
+            root = tmp_path / DEFAULT_PACK_DIR
+
+            explain_result = self.run_cli(tmp_path, "explain", "fixture-repo")
+
+            self.assertEqual(explain_result.returncode, 0, explain_result.stderr)
+            self.assertIn("Explain: fixture-repo", explain_result.stdout)
+            self.assertIn("Status: missing; run 'harness cache refresh fixture-repo'", explain_result.stdout)
+            self.assertIn("Approved Skills\n- None", explain_result.stdout)
+            self.assertIn("Required Evals\n- Last Pass Rate: unknown\n- Tasks: none", explain_result.stdout)
+            self.assertEqual(render_explain(root, "fixture-repo"), explain_result.stdout)
 
     def test_cli_approve_with_exclusion_protects_only_accepted_artifacts(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:

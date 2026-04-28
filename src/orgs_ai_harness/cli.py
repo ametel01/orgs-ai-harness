@@ -9,6 +9,7 @@ from pathlib import Path
 from orgs_ai_harness.approval import ApprovalError, approve_repo, reject_repo, render_approval_review
 from orgs_ai_harness.cache_manager import CacheManagerError, export_cached_pack, refresh_cache
 from orgs_ai_harness.eval_replay import EvalReplayError, run_eval
+from orgs_ai_harness.explain import ExplainError, render_explain
 from orgs_ai_harness.org_pack import (
     OrgPackError,
     attach_org_pack,
@@ -121,6 +122,9 @@ def build_parser() -> argparse.ArgumentParser:
         help="Allow development-only exports for packs that need investigation",
     )
 
+    explain_parser = subparsers.add_parser("explain", help="Explain harness state for one repository")
+    explain_parser.add_argument("repo_id", help="Registered repo id to explain")
+
     return parser
 
 
@@ -232,6 +236,11 @@ def main(argv: list[str] | None = None) -> int:
             )
             return 0
 
+        if args.command == "explain":
+            root = resolve_default_root(Path.cwd())
+            print(render_explain(root, args.repo_id), end="")
+            return 0
+
         if args.command == "repo":
             root = resolve_default_root(Path.cwd())
             if args.repo_command == "add":
@@ -308,6 +317,7 @@ def main(argv: list[str] | None = None) -> int:
         ApprovalError,
         EvalReplayError,
         CacheManagerError,
+        ExplainError,
     ) as exc:
         print(f"error: {exc}", file=sys.stderr)
         return 1
