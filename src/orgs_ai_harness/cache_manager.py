@@ -27,6 +27,14 @@ class CacheRefreshResult:
     status: str
 
 
+@dataclass(frozen=True)
+class ExportResult:
+    repo_id: str
+    target: str
+    export_root: Path
+    status: str
+
+
 def refresh_cache(root: Path, repo_id: str) -> CacheRefreshResult:
     """Refresh a repo-local read-only cache from an approved or verified pack."""
 
@@ -90,6 +98,59 @@ def refresh_cache(root: Path, repo_id: str) -> CacheRefreshResult:
     )
 
 
+def export_cached_pack(
+    root: Path,
+    target: str,
+    repo_id: str,
+    *,
+    allow_draft: bool = False,
+    development: bool = False,
+) -> ExportResult:
+    """Export a cached pack to a managed runtime target directory."""
+
+    root = root.resolve()
+    normalized_target = target.strip()
+    if normalized_target != "generic":
+        raise CacheManagerError(f"unsupported export target: {target}")
+    entry = _find_local_repo(root, repo_id)
+    repo_path = _resolve_repo_path(root, entry)
+    cache_root = repo_path / ".agent-harness" / "cache"
+    metadata = _load_cache_metadata(cache_root)
+    status = _metadata_status(metadata)
+    _enforce_export_policy(entry.id, status, allow_draft=allow_draft, development=development)
+
+    source_repo_root = cache_root / "repos" / entry.id
+    skills_root = source_repo_root / "skills"
+    if not skills_root.is_dir():
+        raise CacheManagerError(f"cached pack has no skills directory: {skills_root}")
+
+    export_root = cache_root / "exports" / normalized_target
+    if export_root.exists():
+        shutil.rmtree(export_root)
+    export_root.mkdir(parents=True)
+    shutil.copytree(skills_root, export_root / "skills")
+    resolvers_path = source_repo_root / "resolvers.yml"
+    if resolvers_path.is_file():
+        shutil.copy2(resolvers_path, export_root / "resolvers.yml")
+    _write_export_metadata(export_root, normalized_target, metadata, status)
+    _make_read_only(export_root)
+
+    return ExportResult(repo_id=entry.id, target=normalized_target, export_root=export_root, status=status)
+
+
+def _find_local_repo(root: Path, repo_id: str) -> RepoEntry:
+    normalized_repo_id = repo_id.strip()
+    if not normalized_repo_id:
+        raise CacheManagerError("repo id cannot be empty")
+    for entry in load_repo_entries(root / "harness.yml"):
+        if entry.id != normalized_repo_id:
+            continue
+        if entry.local_path is None:
+            raise CacheManagerError(f"repo {entry.id} has no local path; run 'harness repo set-path'")
+        return entry
+    raise CacheManagerError(f"repo id is not registered: {normalized_repo_id}")
+
+
 def _find_cacheable_repo(root: Path, repo_id: str) -> RepoEntry:
     normalized_repo_id = repo_id.strip()
     if not normalized_repo_id:
@@ -110,6 +171,82 @@ def _find_cacheable_repo(root: Path, repo_id: str) -> RepoEntry:
             raise CacheManagerError(f"repo {entry.id} has no local path; run 'harness repo set-path'")
         return entry
     raise CacheManagerError(f"repo id is not registered: {normalized_repo_id}")
+
+
+def _load_cache_metadata(cache_root: Path) -> dict[str, object]:
+    metadata_path = cache_root / "metadata.json"
+    if not metadata_path.is_file():
+        raise CacheManagerError(f"repo cache is missing; run 'harness cache refresh <repo-id>' first: {metadata_path}")
+    try:
+        metadata = json.loads(metadata_path.read_text(encoding="utf-8"))
+    except json.JSONDecodeError as exc:
+        raise CacheManagerError(f"cache metadata is malformed: {metadata_path} ({exc.msg})") from exc
+    if not isinstance(metadata, dict):
+        raise CacheManagerError(f"cache metadata must be an object: {metadata_path}")
+    return metadata
+
+
+def _metadata_status(metadata: dict[str, object]) -> str:
+    status = metadata.get("status")
+    if not isinstance(status, str) or not status.strip():
+        raise CacheManagerError("cache metadata missing status")
+    return status
+
+
+def _enforce_export_policy(
+    repo_id: str,
+    status: str,
+    *,
+    allow_draft: bool,
+    development: bool,
+) -> None:
+    if status in {"approved-unverified", "verified"}:
+        return
+    if status == "draft" and allow_draft:
+        return
+    if status == "needs-investigation" and development:
+        return
+    if status == "draft":
+        raise CacheManagerError(f"repo {repo_id} is draft; pass --allow-draft to export intentionally")
+    if status == "needs-investigation":
+        raise CacheManagerError(
+            f"repo {repo_id} needs investigation; pass --development to force a development export"
+        )
+    raise CacheManagerError(f"repo {repo_id} cannot be exported with status={status}")
+
+
+def _write_export_metadata(
+    export_root: Path,
+    target: str,
+    cache_metadata: dict[str, object],
+    status: str,
+) -> None:
+    warnings = cache_metadata.get("warnings")
+    if not isinstance(warnings, list):
+        warnings = []
+    if status == "approved-unverified" and not any(
+        isinstance(warning, dict) and warning.get("code") == "approved-unverified" for warning in warnings
+    ):
+        warnings = [
+            *warnings,
+            {
+                "code": "approved-unverified",
+                "message": "Pack is human-approved but eval replay has not verified it.",
+            },
+        ]
+    metadata = {
+        "schema_version": 1,
+        "target": target,
+        "repo_id": cache_metadata.get("repo_id"),
+        "status": status,
+        "pack_ref": cache_metadata.get("pack_ref"),
+        "source_pack_ref": cache_metadata.get("source_pack_ref"),
+        "warnings": warnings,
+    }
+    (export_root / "pack-status.json").write_text(
+        json.dumps(metadata, indent=2, sort_keys=True) + "\n",
+        encoding="utf-8",
+    )
 
 
 def _resolve_repo_path(root: Path, entry: RepoEntry) -> Path:

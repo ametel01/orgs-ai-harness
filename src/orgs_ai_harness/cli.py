@@ -7,7 +7,7 @@ import sys
 from pathlib import Path
 
 from orgs_ai_harness.approval import ApprovalError, approve_repo, reject_repo, render_approval_review
-from orgs_ai_harness.cache_manager import CacheManagerError, refresh_cache
+from orgs_ai_harness.cache_manager import CacheManagerError, export_cached_pack, refresh_cache
 from orgs_ai_harness.eval_replay import EvalReplayError, run_eval
 from orgs_ai_harness.org_pack import (
     OrgPackError,
@@ -111,6 +111,16 @@ def build_parser() -> argparse.ArgumentParser:
     cache_refresh = cache_subparsers.add_parser("refresh", help="Refresh a repo-local approved pack cache")
     cache_refresh.add_argument("repo_id", help="Registered repo id to refresh")
 
+    export_parser = subparsers.add_parser("export", help="Export a cached pack for an agent runtime")
+    export_parser.add_argument("target", help="Export target: generic")
+    export_parser.add_argument("repo_id", help="Registered repo id to export")
+    export_parser.add_argument("--allow-draft", action="store_true", help="Allow exporting draft packs intentionally")
+    export_parser.add_argument(
+        "--development",
+        action="store_true",
+        help="Allow development-only exports for packs that need investigation",
+    )
+
     return parser
 
 
@@ -204,6 +214,21 @@ def main(argv: list[str] | None = None) -> int:
             print(
                 f"Refreshed cache for {result.repo_id}; pack_ref={result.pack_ref}; "
                 f"cache={result.cache_root}"
+            )
+            return 0
+
+        if args.command == "export":
+            root = resolve_default_root(Path.cwd())
+            result = export_cached_pack(
+                root,
+                args.target,
+                args.repo_id,
+                allow_draft=args.allow_draft,
+                development=args.development,
+            )
+            print(
+                f"Exported {result.target} pack for {result.repo_id}; "
+                f"status={result.status}; export={result.export_root}"
             )
             return 0
 
