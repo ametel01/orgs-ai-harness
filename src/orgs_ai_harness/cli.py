@@ -7,6 +7,7 @@ import sys
 from pathlib import Path
 
 from orgs_ai_harness.approval import ApprovalError, approve_repo, reject_repo, render_approval_review
+from orgs_ai_harness.cache_manager import CacheManagerError, refresh_cache
 from orgs_ai_harness.eval_replay import EvalReplayError, run_eval
 from orgs_ai_harness.org_pack import (
     OrgPackError,
@@ -105,6 +106,11 @@ def build_parser() -> argparse.ArgumentParser:
         help="Allow draft/non-approved eval replay without producing verified status",
     )
 
+    cache_parser = subparsers.add_parser("cache", help="Manage repo-local pinned caches")
+    cache_subparsers = cache_parser.add_subparsers(dest="cache_command", required=True)
+    cache_refresh = cache_subparsers.add_parser("refresh", help="Refresh a repo-local approved pack cache")
+    cache_refresh.add_argument("repo_id", help="Registered repo id to refresh")
+
     return parser
 
 
@@ -192,6 +198,15 @@ def main(argv: list[str] | None = None) -> int:
             )
             return 0
 
+        if args.command == "cache" and args.cache_command == "refresh":
+            root = resolve_default_root(Path.cwd())
+            result = refresh_cache(root, args.repo_id)
+            print(
+                f"Refreshed cache for {result.repo_id}; pack_ref={result.pack_ref}; "
+                f"cache={result.cache_root}"
+            )
+            return 0
+
         if args.command == "repo":
             root = resolve_default_root(Path.cwd())
             if args.repo_command == "add":
@@ -267,6 +282,7 @@ def main(argv: list[str] | None = None) -> int:
         RepoOnboardingError,
         ApprovalError,
         EvalReplayError,
+        CacheManagerError,
     ) as exc:
         print(f"error: {exc}", file=sys.stderr)
         return 1

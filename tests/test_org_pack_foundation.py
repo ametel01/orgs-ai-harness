@@ -9,6 +9,7 @@ import tempfile
 import unittest
 from pathlib import Path
 
+from orgs_ai_harness.cache_manager import refresh_cache
 from orgs_ai_harness.config import load_harness_config, parse_harness_config, save_harness_config
 from orgs_ai_harness.eval_replay import AdapterAnswer, rediscovery_cost, score_answer
 from orgs_ai_harness.org_pack import (
@@ -2053,6 +2054,54 @@ class RepoOnboardingTests(unittest.TestCase):
             self.assertNotEqual(validate_result.returncode, 0)
             self.assertIn("verified must be false", validate_result.stderr)
             self.assertIn("approved-unverified warning metadata", validate_result.stderr)
+
+    def test_cache_refresh_writes_repo_local_pointer_and_pinned_cache(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            tmp_path = Path(tmp)
+            repo_path = create_basic_fixture_repo(tmp_path)
+            init_org_pack(tmp_path, "acme")
+            self.assertEqual(self.run_cli(tmp_path, "repo", "add", "fixture-repo").returncode, 0)
+            self.assertEqual(self.run_cli(tmp_path, "onboard", "fixture-repo").returncode, 0)
+            self.assertEqual(self.run_cli(tmp_path, "approve", "fixture-repo", "--all").returncode, 0)
+            root = tmp_path / DEFAULT_PACK_DIR
+            protected_path = root / "repos" / "fixture-repo" / "pack-report.md"
+            protected_before = protected_path.read_bytes()
+
+            result = refresh_cache(root, "fixture-repo")
+
+            self.assertEqual(result.repo_id, "fixture-repo")
+            self.assertEqual(result.repo_path, repo_path.resolve())
+            self.assertTrue(result.cache_root.is_dir())
+            self.assertEqual((result.cache_root / "pack-ref").read_text(encoding="utf-8").strip(), result.pack_ref)
+            pointer = (repo_path / ".agent-harness.yml").read_text(encoding="utf-8")
+            self.assertIn(f"org_skill_pack: {root.resolve()}", pointer)
+            self.assertIn("repo_id: fixture-repo", pointer)
+            self.assertIn(f"pack_ref: {result.pack_ref}", pointer)
+            metadata = json.loads((result.cache_root / "metadata.json").read_text(encoding="utf-8"))
+            self.assertEqual(metadata["status"], "approved-unverified")
+            self.assertEqual(metadata["source_pack_ref"], "repos/fixture-repo/approval.yml")
+            self.assertTrue((result.cache_root / "repos" / "fixture-repo" / "skills" / "build-test-debug" / "SKILL.md").is_file())
+            self.assertTrue((result.cache_root / "org" / "resolvers.yml").is_file())
+            self.assertEqual(protected_path.read_bytes(), protected_before)
+
+            cli_result = self.run_cli(tmp_path, "cache", "refresh", "fixture-repo")
+
+            self.assertEqual(cli_result.returncode, 0, cli_result.stderr)
+            self.assertIn("Refreshed cache for fixture-repo", cli_result.stdout)
+            self.assertEqual(protected_path.read_bytes(), protected_before)
+
+    def test_cli_cache_refresh_requires_approved_pack(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            tmp_path = Path(tmp)
+            create_basic_fixture_repo(tmp_path)
+            init_org_pack(tmp_path, "acme")
+            self.assertEqual(self.run_cli(tmp_path, "repo", "add", "fixture-repo").returncode, 0)
+            self.assertEqual(self.run_cli(tmp_path, "onboard", "fixture-repo").returncode, 0)
+
+            refresh_result = self.run_cli(tmp_path, "cache", "refresh", "fixture-repo")
+
+            self.assertNotEqual(refresh_result.returncode, 0)
+            self.assertIn("must be approved-unverified or verified", refresh_result.stderr)
 
     def test_cli_approve_with_exclusion_protects_only_accepted_artifacts(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
