@@ -2163,6 +2163,68 @@ class RepoOnboardingTests(unittest.TestCase):
             self.assertEqual(protected_path.read_bytes(), protected_before)
             self.assertEqual((root / "harness.yml").read_bytes(), config_before)
 
+    def test_sprint_06_review_approval_acceptance_smoke(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            tmp_path = Path(tmp)
+            create_basic_fixture_repo(tmp_path, "approve-flow")
+            create_basic_fixture_repo(tmp_path, "exclude-flow")
+            create_basic_fixture_repo(tmp_path, "reject-flow")
+            init_org_pack(tmp_path, "acme")
+            self.assertEqual(self.run_cli(tmp_path, "repo", "add", "approve-flow").returncode, 0)
+            self.assertEqual(self.run_cli(tmp_path, "repo", "add", "exclude-flow").returncode, 0)
+            self.assertEqual(self.run_cli(tmp_path, "repo", "add", "reject-flow").returncode, 0)
+            root = tmp_path / DEFAULT_PACK_DIR
+
+            self.assertEqual(self.run_cli(tmp_path, "onboard", "approve-flow").returncode, 0)
+            review_result = self.run_cli(tmp_path, "approve", "approve-flow")
+            self.assertEqual(review_result.returncode, 0, review_result.stderr)
+            self.assertIn("Generated Artifacts", review_result.stdout)
+            self.assertIn("Command Permissions Requested", review_result.stdout)
+            self.assertIn("Risk Notes", review_result.stdout)
+            self.assertIn("Unresolved Unknowns", review_result.stdout)
+            self.assertFalse((root / "repos" / "approve-flow" / "approval.yml").exists())
+
+            approve_result = self.run_cli(tmp_path, "approve", "approve-flow", "--all")
+            self.assertEqual(approve_result.returncode, 0, approve_result.stderr)
+            validate_approved = self.run_cli(tmp_path, "validate", "approve-flow")
+            self.assertEqual(validate_approved.returncode, 0, validate_approved.stderr)
+            protected_file = root / "repos" / "approve-flow" / "pack-report.md"
+            protected_before = protected_file.read_bytes()
+            overwrite_result = self.run_cli(tmp_path, "onboard", "approve-flow")
+            self.assertNotEqual(overwrite_result.returncode, 0)
+            self.assertIn("generation would overwrite protected artifact", overwrite_result.stderr)
+            self.assertEqual(protected_file.read_bytes(), protected_before)
+
+            self.assertEqual(self.run_cli(tmp_path, "onboard", "exclude-flow").returncode, 0)
+            excluded = "repos/exclude-flow/skills/build-test-debug/SKILL.md"
+            exclude_result = self.run_cli(tmp_path, "approve", "exclude-flow", "--exclude", excluded)
+            self.assertEqual(exclude_result.returncode, 0, exclude_result.stderr)
+            validate_excluded = self.run_cli(tmp_path, "validate", "exclude-flow")
+            self.assertEqual(validate_excluded.returncode, 0, validate_excluded.stderr)
+            excluded_approval = json.loads((root / "repos" / "exclude-flow" / "approval.yml").read_text(encoding="utf-8"))
+            self.assertIn(excluded, excluded_approval["excluded_artifacts"])
+            self.assertNotIn(excluded, {item["path"] for item in excluded_approval["protected_artifacts"]})
+
+            self.assertEqual(self.run_cli(tmp_path, "onboard", "reject-flow").returncode, 0)
+            reject_result = self.run_cli(tmp_path, "reject", "reject-flow", "--reason", "Acceptance smoke rejection")
+            self.assertEqual(reject_result.returncode, 0, reject_result.stderr)
+            validate_rejected = self.run_cli(tmp_path, "validate", "reject-flow")
+            self.assertEqual(validate_rejected.returncode, 0, validate_rejected.stderr)
+            rejected = json.loads((root / "repos" / "reject-flow" / "approval.yml").read_text(encoding="utf-8"))
+            self.assertEqual(rejected["decision"], "rejected")
+
+            entries = {entry.id: entry for entry in load_repo_entries(root / "harness.yml")}
+            self.assertEqual(entries["approve-flow"].coverage_status, "approved-unverified")
+            self.assertEqual(entries["exclude-flow"].coverage_status, "approved-unverified")
+            self.assertEqual(entries["reject-flow"].coverage_status, "needs-investigation")
+            trace_events = [
+                json.loads(line)
+                for line in (root / "trace-summaries" / "approval-events.jsonl").read_text(encoding="utf-8").splitlines()
+            ]
+            decisions = [event["payload"]["decision"] for event in trace_events]
+            self.assertGreaterEqual(decisions.count("approved"), 2)
+            self.assertIn("rejected", decisions)
+
     def test_cli_approve_without_all_renders_review_without_mutating_draft(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
             tmp_path = Path(tmp)
