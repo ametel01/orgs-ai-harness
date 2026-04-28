@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+from datetime import UTC, datetime
 import json
 from pathlib import Path
 
@@ -13,10 +14,12 @@ class ExplainError(Exception):
 
 
 def render_explain(root: Path, repo_id: str) -> str:
-    """Render deterministic, read-only state for one covered repository."""
+    """Render deterministic harness state for one repository reference."""
 
     root = root.resolve()
     entry = _find_repo(root, repo_id)
+    if entry is None:
+        return _render_uncovered_explain(root, repo_id)
     artifact_root = root / "repos" / entry.id
     cache = _cache_state(root, entry)
     skills = _approved_skills(artifact_root)
@@ -57,14 +60,36 @@ def render_explain(root: Path, repo_id: str) -> str:
     return "\n".join(lines) + "\n"
 
 
-def _find_repo(root: Path, repo_id: str) -> RepoEntry:
+def _render_uncovered_explain(root: Path, repo_id: str) -> str:
+    normalized_repo_id = _normalize_repo_id(repo_id)
+    event = _record_boundary_decision(root, normalized_repo_id)
+    lines = [
+        f"Explain: {normalized_repo_id}",
+        "",
+        "Coverage",
+        "- Covered: no",
+        "- Why: repo is not selected in harness repo registry",
+        "- Lifecycle Status: uncovered",
+        "- Active: false",
+        "- Pack Ref: none",
+        "",
+        "Boundary Decisions",
+        f"- {event['event_id']}: {event['payload']['decision']}",
+        "",
+        "Next Actions",
+        f"- Run `harness repo add <path-or-url>` to explicitly cover {normalized_repo_id}.",
+    ]
+    return "\n".join(lines) + "\n"
+
+
+def _find_repo(root: Path, repo_id: str) -> RepoEntry | None:
     normalized_repo_id = repo_id.strip()
     if not normalized_repo_id:
         raise ExplainError("repo id cannot be empty")
     for entry in load_repo_entries(root / "harness.yml"):
         if entry.id == normalized_repo_id:
             return entry
-    raise ExplainError(f"repo id is not registered: {normalized_repo_id}")
+    return None
 
 
 def _cache_state(root: Path, entry: RepoEntry) -> list[str]:
@@ -177,11 +202,11 @@ def _boundary_decisions(root: Path, repo_id: str) -> list[str]:
             event = json.loads(line)
         except json.JSONDecodeError:
             continue
-        if event.get("repo_id") not in {repo_id, None}:
-            continue
         payload = event.get("payload")
         if not isinstance(payload, dict):
             payload = {}
+        if event.get("repo_id") != repo_id and payload.get("referenced_repo_id") != repo_id:
+            continue
         rendered.append(
             f"{_string(event.get('event_id'), 'unknown')}: "
             f"{_string(payload.get('decision'), 'boundary decision')}"
@@ -211,3 +236,41 @@ def _string(value: object, default: str) -> str:
     if isinstance(value, str) and value.strip():
         return value
     return default
+
+
+def _record_boundary_decision(root: Path, referenced_repo_id: str) -> dict[str, object]:
+    trace_root = root / "trace-summaries"
+    trace_root.mkdir(parents=True, exist_ok=True)
+    trace_path = trace_root / "boundary-decisions.jsonl"
+    timestamp = _timestamp()
+    existing_count = len(trace_path.read_text(encoding="utf-8").splitlines()) if trace_path.is_file() else 0
+    event = {
+        "schema_version": 1,
+        "event_id": f"evt_boundary_{timestamp.replace(':', '').replace('-', '')}_{existing_count + 1:04d}",
+        "event_type": "boundary_decision",
+        "timestamp": timestamp,
+        "repo_id": None,
+        "pack_ref": None,
+        "actor": "harness",
+        "adapter": None,
+        "payload": {
+            "referenced_repo_id": referenced_repo_id,
+            "decision": f"uncovered repo {referenced_repo_id} was not auto-added",
+            "reason": "Harness coverage requires explicit repo registration.",
+            "registry_mutation": "none",
+        },
+    }
+    with trace_path.open("a", encoding="utf-8") as handle:
+        handle.write(json.dumps(event, sort_keys=True) + "\n")
+    return event
+
+
+def _normalize_repo_id(repo_id: str) -> str:
+    normalized = repo_id.strip()
+    if not normalized:
+        raise ExplainError("repo id cannot be empty")
+    return normalized
+
+
+def _timestamp() -> str:
+    return datetime.now(UTC).replace(microsecond=0).isoformat().replace("+00:00", "Z")

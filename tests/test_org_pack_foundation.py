@@ -2263,6 +2263,30 @@ class RepoOnboardingTests(unittest.TestCase):
             self.assertIn("Required Evals\n- Last Pass Rate: unknown\n- Tasks: none", explain_result.stdout)
             self.assertEqual(render_explain(root, "fixture-repo"), explain_result.stdout)
 
+    def test_explain_records_boundary_decision_for_uncovered_repo_without_registry_mutation(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            tmp_path = Path(tmp)
+            create_basic_fixture_repo(tmp_path)
+            init_org_pack(tmp_path, "acme")
+            self.assertEqual(self.run_cli(tmp_path, "repo", "add", "fixture-repo").returncode, 0)
+            root = tmp_path / DEFAULT_PACK_DIR
+            before_entries = load_repo_entries(root / "harness.yml")
+
+            explain_result = self.run_cli(tmp_path, "explain", "missing-repo")
+
+            self.assertEqual(explain_result.returncode, 0, explain_result.stderr)
+            self.assertIn("Explain: missing-repo", explain_result.stdout)
+            self.assertIn("- Covered: no", explain_result.stdout)
+            self.assertIn("uncovered repo missing-repo was not auto-added", explain_result.stdout)
+            after_entries = load_repo_entries(root / "harness.yml")
+            self.assertEqual(after_entries, before_entries)
+            trace_path = root / "trace-summaries" / "boundary-decisions.jsonl"
+            events = [json.loads(line) for line in trace_path.read_text(encoding="utf-8").splitlines()]
+            self.assertEqual(events[-1]["event_type"], "boundary_decision")
+            self.assertIsNone(events[-1]["repo_id"])
+            self.assertEqual(events[-1]["payload"]["referenced_repo_id"], "missing-repo")
+            self.assertEqual(events[-1]["payload"]["registry_mutation"], "none")
+
     def test_cli_approve_with_exclusion_protects_only_accepted_artifacts(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
             tmp_path = Path(tmp)
