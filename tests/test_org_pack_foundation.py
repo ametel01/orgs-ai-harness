@@ -2755,6 +2755,49 @@ class RepoOnboardingTests(unittest.TestCase):
             self.assertEqual(entries["verified-flow"].coverage_status, "verified")
             self.assertEqual(entries["blocked-flow"].coverage_status, "needs-investigation")
 
+    def test_sprint_08_refresh_export_explain_acceptance_smoke(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            tmp_path = Path(tmp)
+            repo_path = create_basic_fixture_repo(tmp_path)
+            init_org_pack(tmp_path, "acme")
+            self.assertEqual(self.run_cli(tmp_path, "repo", "add", "fixture-repo").returncode, 0)
+            self.assertEqual(self.run_cli(tmp_path, "onboard", "fixture-repo").returncode, 0)
+            self.assertEqual(self.run_cli(tmp_path, "approve", "fixture-repo", "--all").returncode, 0)
+            root = tmp_path / DEFAULT_PACK_DIR
+            artifact_root = root / "repos" / "fixture-repo"
+            approval = json.loads((artifact_root / "approval.yml").read_text(encoding="utf-8"))
+            protected_before = {
+                path: (root / path).read_bytes()
+                for path in approval["approved_artifacts"]
+                if isinstance(path, str)
+            }
+
+            refresh_result = self.run_cli(tmp_path, "cache", "refresh", "fixture-repo")
+            generic_result = self.run_cli(tmp_path, "export", "generic", "fixture-repo")
+            codex_result = self.run_cli(tmp_path, "export", "codex", "fixture-repo")
+            explain_result = self.run_cli(tmp_path, "explain", "fixture-repo")
+
+            self.assertEqual(refresh_result.returncode, 0, refresh_result.stderr)
+            self.assertEqual(generic_result.returncode, 0, generic_result.stderr)
+            self.assertEqual(codex_result.returncode, 0, codex_result.stderr)
+            self.assertEqual(explain_result.returncode, 0, explain_result.stderr)
+            self.assertIn("Refreshed cache for fixture-repo", refresh_result.stdout)
+            self.assertIn("Exported generic pack for fixture-repo", generic_result.stdout)
+            self.assertIn("Exported codex pack for fixture-repo", codex_result.stdout)
+            self.assertIn("Explain: fixture-repo", explain_result.stdout)
+            self.assertIn("Approved Skills", explain_result.stdout)
+            self.assertIn("Cache", explain_result.stdout)
+
+            cache_root = repo_path / ".agent-harness" / "cache"
+            self.assertTrue((repo_path / ".agent-harness.yml").is_file())
+            self.assertTrue((cache_root / "pack-ref").is_file())
+            self.assertTrue((cache_root / "exports" / "generic" / "pack-status.json").is_file())
+            self.assertTrue((cache_root / "exports" / "codex" / "pack-status.json").is_file())
+            self.assertTrue((cache_root / "exports" / "generic" / "skills" / "build-test-debug" / "SKILL.md").is_file())
+            self.assertTrue((cache_root / "exports" / "codex" / "skills" / "repo-architecture" / "SKILL.md").is_file())
+            for path, before in protected_before.items():
+                self.assertEqual((root / path).read_bytes(), before, path)
+
     def test_cli_onboard_rejects_unknown_repo_without_artifact_mutation(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
             tmp_path = Path(tmp)
