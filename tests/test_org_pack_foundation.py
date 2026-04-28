@@ -10,6 +10,7 @@ import unittest
 from pathlib import Path
 
 from orgs_ai_harness.config import load_harness_config, parse_harness_config, save_harness_config
+from orgs_ai_harness.eval_replay import AdapterAnswer, rediscovery_cost, score_answer
 from orgs_ai_harness.org_pack import (
     ATTACHMENT_FILE,
     DEFAULT_PACK_DIR,
@@ -1848,6 +1849,13 @@ class RepoOnboardingTests(unittest.TestCase):
         self.assertEqual(scan_result.returncode, 0, scan_result.stderr)
         return tmp_path / DEFAULT_PACK_DIR / "repos" / "fixture-repo"
 
+    def close_blocking_unknown(self, tmp_path: Path, repo_id: str) -> None:
+        unknowns_path = tmp_path / DEFAULT_PACK_DIR / "repos" / repo_id / "unknowns.yml"
+        unknowns = json.loads(unknowns_path.read_text(encoding="utf-8"))
+        for unknown in unknowns["unknowns"]:
+            unknown["status"] = "closed"
+        unknowns_path.write_text(json.dumps(unknowns), encoding="utf-8")
+
     def test_cli_onboard_scan_only_writes_summary_unknowns_and_manifest(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
             tmp_path = Path(tmp)
@@ -2276,6 +2284,243 @@ class RepoOnboardingTests(unittest.TestCase):
             self.assertIn("Changed: 1", review_result.stdout)
             self.assertIn("Added: 0", review_result.stdout)
             self.assertIn("Removed: 0", review_result.stdout)
+
+    def test_cli_eval_replays_baseline_and_skill_pack_with_fixture_adapter(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            tmp_path = Path(tmp)
+            create_basic_fixture_repo(tmp_path)
+            init_org_pack(tmp_path, "acme")
+            self.assertEqual(self.run_cli(tmp_path, "repo", "add", "fixture-repo").returncode, 0)
+            self.assertEqual(self.run_cli(tmp_path, "onboard", "fixture-repo").returncode, 0)
+            self.assertEqual(self.run_cli(tmp_path, "approve", "fixture-repo", "--all").returncode, 0)
+
+            eval_result = self.run_cli(tmp_path, "eval", "fixture-repo")
+
+            self.assertEqual(eval_result.returncode, 0, eval_result.stderr)
+            self.assertIn("baseline_pass_rate=", eval_result.stdout)
+            self.assertIn("skill_pack_pass_rate=", eval_result.stdout)
+            self.assertIn("status=needs-investigation", eval_result.stdout)
+            root = tmp_path / DEFAULT_PACK_DIR
+            report = json.loads((root / "repos" / "fixture-repo" / "eval-report.yml").read_text(encoding="utf-8"))
+            self.assertEqual(report["repo_id"], "fixture-repo")
+            self.assertEqual(report["adapter"], "fixture")
+            self.assertIn("baseline", report)
+            self.assertIn("skill_pack", report)
+            self.assertIsInstance(report["baseline_pass_rate"], float)
+            self.assertIsInstance(report["skill_pack_pass_rate"], float)
+            self.assertIsInstance(report["baseline_delta"], float)
+            self.assertIsInstance(report["rediscovery_cost_delta"], float)
+            self.assertEqual(report["status"], "needs-investigation")
+            self.assertIn("unk_001", report["blocking_unknowns"])
+            self.assertIn("harness validate fixture-repo", report["command_approvals_used"])
+            self.assertTrue((root / "trace-summaries" / "eval-events.jsonl").is_file())
+
+    def test_cli_eval_refuses_draft_pack_unless_development_flag_is_used(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            tmp_path = Path(tmp)
+            create_basic_fixture_repo(tmp_path)
+            init_org_pack(tmp_path, "acme")
+            self.assertEqual(self.run_cli(tmp_path, "repo", "add", "fixture-repo").returncode, 0)
+            self.assertEqual(self.run_cli(tmp_path, "onboard", "fixture-repo").returncode, 0)
+
+            eval_result = self.run_cli(tmp_path, "eval", "fixture-repo")
+            development_result = self.run_cli(tmp_path, "eval", "fixture-repo", "--development")
+
+            self.assertNotEqual(eval_result.returncode, 0)
+            self.assertIn("is still draft", eval_result.stderr)
+            self.assertEqual(development_result.returncode, 0, development_result.stderr)
+            self.assertIn("status=development", development_result.stdout)
+            entries = load_repo_entries(tmp_path / DEFAULT_PACK_DIR / "harness.yml")
+            self.assertEqual(entries[0].coverage_status, "draft")
+
+    def test_cli_eval_requires_user_approved_eval_artifact(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            tmp_path = Path(tmp)
+            create_basic_fixture_repo(tmp_path)
+            init_org_pack(tmp_path, "acme")
+            self.assertEqual(self.run_cli(tmp_path, "repo", "add", "fixture-repo").returncode, 0)
+            self.assertEqual(self.run_cli(tmp_path, "onboard", "fixture-repo").returncode, 0)
+            excluded = "repos/fixture-repo/evals/onboarding.yml"
+            self.assertEqual(self.run_cli(tmp_path, "approve", "fixture-repo", "--exclude", excluded).returncode, 0)
+
+            eval_result = self.run_cli(tmp_path, "eval", "fixture-repo")
+
+            self.assertNotEqual(eval_result.returncode, 0)
+            self.assertIn("no user-approved onboarding evals", eval_result.stderr)
+
+    def test_score_answer_requires_evidence_and_forbidden_claims_fail(self) -> None:
+        task = {
+            "id": "safe-procedure",
+            "expected_files": ["scan/scan-manifest.yml"],
+            "expected_commands": ["npm test"],
+            "expected_contains": ["sensitive filename policy"],
+            "forbidden_contains": ["do-not-leak"],
+        }
+        passing_answer = AdapterAnswer(
+            answer="sensitive filename policy\nnpm test",
+            cited_files=("scan/scan-manifest.yml",),
+            commands=("npm test",),
+            metrics={"elapsed_adapter_steps": 3},
+        )
+        forbidden_answer = AdapterAnswer(
+            answer="sensitive filename policy\nnpm test\ndo-not-leak",
+            cited_files=("scan/scan-manifest.yml",),
+            commands=("npm test",),
+            metrics={"elapsed_adapter_steps": 3},
+        )
+        missing_evidence_answer = AdapterAnswer(
+            answer="sensitive filename policy\nnpm test",
+            cited_files=(),
+            commands=("npm test",),
+            metrics={"elapsed_adapter_steps": 3},
+        )
+
+        self.assertTrue(score_answer(task, passing_answer)["passed"])
+        self.assertFalse(score_answer(task, forbidden_answer)["passed"])
+        self.assertEqual(score_answer(task, forbidden_answer)["forbidden_claims_score"], 0.0)
+        self.assertFalse(score_answer(task, missing_evidence_answer)["passed"])
+        self.assertEqual(score_answer(task, missing_evidence_answer)["evidence_score"], 0.0)
+
+    def test_rediscovery_cost_sums_bounded_adapter_metrics(self) -> None:
+        self.assertEqual(
+            rediscovery_cost(
+                {
+                    "tool_calls": 2,
+                    "file_reads": 3,
+                    "searches": 4,
+                    "command_attempts": 1,
+                    "elapsed_adapter_steps": 5,
+                }
+            ),
+            15,
+        )
+
+    def test_cli_eval_codex_local_uses_adapter_contract_and_records_trace_shape(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            tmp_path = Path(tmp)
+            create_basic_fixture_repo(tmp_path)
+            init_org_pack(tmp_path, "acme")
+            self.assertEqual(self.run_cli(tmp_path, "repo", "add", "fixture-repo").returncode, 0)
+            self.assertEqual(self.run_cli(tmp_path, "onboard", "fixture-repo").returncode, 0)
+            self.assertEqual(self.run_cli(tmp_path, "approve", "fixture-repo", "--all").returncode, 0)
+
+            eval_result = self.run_cli(tmp_path, "eval", "fixture-repo", "--adapter", "codex-local")
+
+            self.assertEqual(eval_result.returncode, 0, eval_result.stderr)
+            root = tmp_path / DEFAULT_PACK_DIR
+            report = json.loads((root / "repos" / "fixture-repo" / "eval-report.yml").read_text(encoding="utf-8"))
+            self.assertEqual(report["adapter"], "codex-local")
+            trace_events = [
+                json.loads(line)
+                for line in (root / "trace-summaries" / "eval-events.jsonl").read_text(encoding="utf-8").splitlines()
+            ]
+            self.assertTrue(trace_events)
+            first = trace_events[0]
+            for field in ("schema_version", "event_id", "event_type", "timestamp", "repo_id", "pack_ref", "actor", "adapter", "payload"):
+                self.assertIn(field, first)
+            event_types = {event["event_type"] for event in trace_events}
+            self.assertIn("adapter_run", event_types)
+            self.assertIn("eval_answer", event_types)
+            self.assertIn("scoring", event_types)
+            self.assertIn("command_approval", event_types)
+
+    def test_cli_eval_verifies_pack_when_thresholds_pass_without_blocking_unknowns(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            tmp_path = Path(tmp)
+            create_basic_fixture_repo(tmp_path)
+            init_org_pack(tmp_path, "acme")
+            self.assertEqual(self.run_cli(tmp_path, "repo", "add", "fixture-repo").returncode, 0)
+            self.assertEqual(self.run_cli(tmp_path, "onboard", "fixture-repo").returncode, 0)
+            self.close_blocking_unknown(tmp_path, "fixture-repo")
+            self.assertEqual(self.run_cli(tmp_path, "approve", "fixture-repo", "--all").returncode, 0)
+
+            eval_result = self.run_cli(tmp_path, "eval", "fixture-repo")
+
+            self.assertEqual(eval_result.returncode, 0, eval_result.stderr)
+            self.assertIn("status=verified", eval_result.stdout)
+            root = tmp_path / DEFAULT_PACK_DIR
+            report = json.loads((root / "repos" / "fixture-repo" / "eval-report.yml").read_text(encoding="utf-8"))
+            approval = json.loads((root / "repos" / "fixture-repo" / "approval.yml").read_text(encoding="utf-8"))
+            entries = load_repo_entries(root / "harness.yml")
+            self.assertEqual(report["status"], "verified")
+            self.assertGreaterEqual(report["rediscovery_cost_delta"], 0.30)
+            self.assertEqual(entries[0].coverage_status, "verified")
+            self.assertTrue(approval["verified"])
+            self.assertEqual(approval["status"], "verified")
+            self.assertEqual(self.run_cli(tmp_path, "validate", "fixture-repo").returncode, 0)
+
+    def test_cli_eval_keeps_approved_unverified_when_thresholds_miss(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            tmp_path = Path(tmp)
+            create_basic_fixture_repo(tmp_path)
+            init_org_pack(tmp_path, "acme")
+            self.assertEqual(self.run_cli(tmp_path, "repo", "add", "fixture-repo").returncode, 0)
+            self.assertEqual(self.run_cli(tmp_path, "onboard", "fixture-repo").returncode, 0)
+            self.close_blocking_unknown(tmp_path, "fixture-repo")
+            self.assertEqual(self.run_cli(tmp_path, "approve", "fixture-repo", "--all").returncode, 0)
+            root = tmp_path / DEFAULT_PACK_DIR
+            evals_path = root / "repos" / "fixture-repo" / "evals" / "onboarding.yml"
+            evals = json.loads(evals_path.read_text(encoding="utf-8"))
+            for task in evals["tasks"]:
+                task["expected_files"] = []
+                task["expected_commands"] = []
+                task["expected_contains"] = []
+                task["forbidden_contains"] = []
+            evals_path.write_text(json.dumps(evals), encoding="utf-8")
+
+            eval_result = self.run_cli(tmp_path, "eval", "fixture-repo")
+
+            self.assertEqual(eval_result.returncode, 0, eval_result.stderr)
+            self.assertIn("status=approved-unverified", eval_result.stdout)
+            report = json.loads((root / "repos" / "fixture-repo" / "eval-report.yml").read_text(encoding="utf-8"))
+            entries = load_repo_entries(root / "harness.yml")
+            self.assertEqual(report["baseline_delta"], 0.0)
+            self.assertEqual(report["rediscovery_cost_delta"], 0.0)
+            self.assertEqual(entries[0].coverage_status, "approved-unverified")
+
+    def test_sprint_07_local_eval_replay_acceptance_smoke(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            tmp_path = Path(tmp)
+            create_basic_fixture_repo(tmp_path, "verified-flow")
+            create_basic_fixture_repo(tmp_path, "blocked-flow")
+            init_org_pack(tmp_path, "acme")
+            self.assertEqual(self.run_cli(tmp_path, "repo", "add", "verified-flow").returncode, 0)
+            self.assertEqual(self.run_cli(tmp_path, "repo", "add", "blocked-flow").returncode, 0)
+
+            self.assertEqual(self.run_cli(tmp_path, "onboard", "verified-flow").returncode, 0)
+            draft_eval = self.run_cli(tmp_path, "eval", "verified-flow")
+            self.assertNotEqual(draft_eval.returncode, 0)
+            development_eval = self.run_cli(tmp_path, "eval", "verified-flow", "--development")
+            self.assertEqual(development_eval.returncode, 0, development_eval.stderr)
+            self.assertIn("status=development", development_eval.stdout)
+            self.close_blocking_unknown(tmp_path, "verified-flow")
+            self.assertEqual(self.run_cli(tmp_path, "approve", "verified-flow", "--all").returncode, 0)
+            verified_eval = self.run_cli(tmp_path, "eval", "verified-flow")
+            self.assertEqual(verified_eval.returncode, 0, verified_eval.stderr)
+            self.assertIn("status=verified", verified_eval.stdout)
+
+            self.assertEqual(self.run_cli(tmp_path, "onboard", "blocked-flow").returncode, 0)
+            self.assertEqual(self.run_cli(tmp_path, "approve", "blocked-flow", "--all").returncode, 0)
+            blocked_eval = self.run_cli(tmp_path, "eval", "blocked-flow")
+            self.assertEqual(blocked_eval.returncode, 0, blocked_eval.stderr)
+            self.assertIn("status=needs-investigation", blocked_eval.stdout)
+
+            root = tmp_path / DEFAULT_PACK_DIR
+            verified_report = json.loads((root / "repos" / "verified-flow" / "eval-report.yml").read_text(encoding="utf-8"))
+            blocked_report = json.loads((root / "repos" / "blocked-flow" / "eval-report.yml").read_text(encoding="utf-8"))
+            self.assertEqual(verified_report["status"], "verified")
+            self.assertEqual(blocked_report["status"], "needs-investigation")
+            self.assertIn("baseline", verified_report)
+            self.assertIn("skill_pack", verified_report)
+            self.assertIn("baseline_pass_rate", verified_report)
+            self.assertIn("skill_pack_pass_rate", verified_report)
+            self.assertIn("baseline_delta", verified_report)
+            self.assertIn("rediscovery_cost_delta", verified_report)
+            self.assertIn("command_approvals_used", verified_report)
+            self.assertIn("unk_001", blocked_report["blocking_unknowns"])
+            entries = {entry.id: entry for entry in load_repo_entries(root / "harness.yml")}
+            self.assertEqual(entries["verified-flow"].coverage_status, "verified")
+            self.assertEqual(entries["blocked-flow"].coverage_status, "needs-investigation")
 
     def test_cli_onboard_rejects_unknown_repo_without_artifact_mutation(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:

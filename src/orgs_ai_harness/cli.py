@@ -7,6 +7,7 @@ import sys
 from pathlib import Path
 
 from orgs_ai_harness.approval import ApprovalError, approve_repo, reject_repo, render_approval_review
+from orgs_ai_harness.eval_replay import EvalReplayError, run_eval
 from orgs_ai_harness.org_pack import (
     OrgPackError,
     attach_org_pack,
@@ -95,6 +96,15 @@ def build_parser() -> argparse.ArgumentParser:
     reject_parser.add_argument("repo_id", help="Registered repo id to reject")
     reject_parser.add_argument("--reason", help="Human rejection reason to record in the approval trace")
 
+    eval_parser = subparsers.add_parser("eval", help="Replay approved onboarding evals locally")
+    eval_parser.add_argument("repo_id", help="Registered repo id to evaluate")
+    eval_parser.add_argument("--adapter", default="fixture", help="Eval adapter to use: fixture or codex-local")
+    eval_parser.add_argument(
+        "--development",
+        action="store_true",
+        help="Allow draft/non-approved eval replay without producing verified status",
+    )
+
     return parser
 
 
@@ -171,6 +181,17 @@ def main(argv: list[str] | None = None) -> int:
             print(f"Rejected draft pack for repo {result.repo_id}; status=needs-investigation")
             return 0
 
+        if args.command == "eval":
+            root = resolve_default_root(Path.cwd())
+            result = run_eval(root, args.repo_id, adapter_id=args.adapter, development=args.development)
+            print(
+                f"Evaluated repo {result.repo_id}; baseline_pass_rate={result.baseline_pass_rate:.2f}; "
+                f"skill_pack_pass_rate={result.skill_pack_pass_rate:.2f}; "
+                f"rediscovery_cost_delta={result.rediscovery_cost_delta:.2f}; status={result.status}; "
+                f"report={result.report_path}"
+            )
+            return 0
+
         if args.command == "repo":
             root = resolve_default_root(Path.cwd())
             if args.repo_command == "add":
@@ -239,7 +260,14 @@ def main(argv: list[str] | None = None) -> int:
                     )
                 return 0
 
-    except (OrgPackError, RepoRegistryError, RepoDiscoveryError, RepoOnboardingError, ApprovalError) as exc:
+    except (
+        OrgPackError,
+        RepoRegistryError,
+        RepoDiscoveryError,
+        RepoOnboardingError,
+        ApprovalError,
+        EvalReplayError,
+    ) as exc:
         print(f"error: {exc}", file=sys.stderr)
         return 1
 

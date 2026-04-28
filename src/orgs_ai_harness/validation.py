@@ -469,16 +469,22 @@ def _validate_pack_report(path: Path, root: Path, errors: list[str]) -> None:
         errors.append(f"missing pack report: {path.relative_to(root)}")
         return
     text = path.read_text(encoding="utf-8")
-    if "Status: draft" not in text:
-        errors.append(f"pack-report.md must state draft status: {path.relative_to(root)}")
-    if "not approved" not in text or "not verified" not in text:
+    status_markers = (
+        "Status: draft",
+        "Status: approved-unverified",
+        "Status: verified",
+        "Status: needs-investigation",
+    )
+    if not any(marker in text for marker in status_markers):
+        errors.append(f"pack-report.md must state pack status: {path.relative_to(root)}")
+    if "Status: draft" in text and ("not approved" not in text or "not verified" not in text):
         errors.append(f"pack-report.md must not imply approval or verification: {path.relative_to(root)}")
 
 
 def _validate_approval_metadata(root: Path, repo_id: str, path: Path, errors: list[str]) -> None:
     entries = parse_repo_block(next(block for block in split_top_level_blocks((root / "harness.yml").read_text(encoding="utf-8")) if block.key == "repos"))
     entry = next((candidate for candidate in entries if candidate.id == repo_id), None)
-    if entry is None or entry.coverage_status != "approved-unverified":
+    if entry is None or entry.coverage_status not in {"approved-unverified", "verified"}:
         return
 
     artifact = _load_json_artifact(path, "approval metadata", errors, root)
@@ -489,12 +495,26 @@ def _validate_approval_metadata(root: Path, repo_id: str, path: Path, errors: li
         errors.append(f"approval.yml field schema_version must be 1: {path.relative_to(root)}")
     if artifact.get("repo_id") != repo_id:
         errors.append(f"approval.yml field repo_id must be {repo_id}: {path.relative_to(root)}")
-    if artifact.get("status") != "approved-unverified":
-        errors.append(f"approval.yml field status must be approved-unverified: {path.relative_to(root)}")
+    if entry.coverage_status == "verified":
+        if artifact.get("status") != "verified":
+            errors.append(f"approval.yml field status must be verified: {path.relative_to(root)}")
+        if artifact.get("verified") is not True:
+            errors.append(f"approval.yml field verified must be true for verified packs")
+        verification = artifact.get("verification")
+        if not isinstance(verification, dict):
+            errors.append("approval.yml must include verification metadata for verified packs")
+    else:
+        if artifact.get("status") != "approved-unverified":
+            errors.append(f"approval.yml field status must be approved-unverified: {path.relative_to(root)}")
+        if artifact.get("verified") is not False:
+            errors.append(f"approval.yml field verified must be false for approved-unverified packs")
+        warnings = artifact.get("warnings")
+        if not isinstance(warnings, list) or not any(
+            isinstance(warning, dict) and warning.get("code") == "approved-unverified" for warning in warnings
+        ):
+            errors.append("approval.yml must include approved-unverified warning metadata")
     if artifact.get("decision") != "approved":
         errors.append(f"approval.yml field decision must be approved: {path.relative_to(root)}")
-    if artifact.get("verified") is not False:
-        errors.append(f"approval.yml field verified must be false for approved-unverified packs")
     if artifact.get("pack_ref") != entry.pack_ref:
         errors.append(f"approval.yml field pack_ref must match harness.yml repo pack_ref")
 
@@ -532,12 +552,6 @@ def _validate_approval_metadata(root: Path, repo_id: str, path: Path, errors: li
     if approved_paths and protected_paths != approved_paths:
         errors.append("approval.yml protected_artifacts must exactly match approved_artifacts")
 
-    warnings = artifact.get("warnings")
-    if not isinstance(warnings, list) or not any(
-        isinstance(warning, dict) and warning.get("code") == "approved-unverified" for warning in warnings
-    ):
-        errors.append("approval.yml must include approved-unverified warning metadata")
-
 
 def _validate_repo_entry(
     repo_id: str,
@@ -560,14 +574,15 @@ def _validate_repo_entry(
         "needs-investigation",
         "draft",
         "approved-unverified",
+        "verified",
         "deactivated",
         "external",
     }:
         errors.append(
             f"harness.yml repo {repo_id} has invalid coverage_status: {coverage_status} "
-            "(supported values: selected, onboarding, needs-investigation, draft, approved-unverified, deactivated, external)"
+            "(supported values: selected, onboarding, needs-investigation, draft, approved-unverified, verified, deactivated, external)"
         )
-    if coverage_status in {"selected", "onboarding", "needs-investigation", "draft", "approved-unverified"}:
+    if coverage_status in {"selected", "onboarding", "needs-investigation", "draft", "approved-unverified", "verified"}:
         if not active:
             errors.append(f"harness.yml repo {repo_id} with {coverage_status} coverage must be active")
         if external:
