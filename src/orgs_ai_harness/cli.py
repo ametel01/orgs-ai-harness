@@ -6,7 +6,7 @@ import argparse
 import sys
 from pathlib import Path
 
-from orgs_ai_harness.approval import ApprovalError, approve_repo_all
+from orgs_ai_harness.approval import ApprovalError, approve_repo_all, render_approval_review
 from orgs_ai_harness.org_pack import (
     OrgPackError,
     attach_org_pack,
@@ -146,7 +146,8 @@ def main(argv: list[str] | None = None) -> int:
         if args.command == "approve":
             root = resolve_default_root(Path.cwd())
             if not args.all:
-                raise ApprovalError("approve requires --all until review-only approval view is available")
+                print(render_approval_review(root, args.repo_id), end="")
+                return 0
             result = approve_repo_all(root, args.repo_id, rationale=args.rationale)
             print(
                 f"Approved {len(result.approved_artifacts)} artifact(s) for repo "

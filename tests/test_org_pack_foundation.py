@@ -2026,7 +2026,7 @@ class RepoOnboardingTests(unittest.TestCase):
 
             self.assertEqual(validate_result.returncode, 0, validate_result.stderr)
 
-    def test_cli_approve_requires_explicit_all_without_mutating_draft(self) -> None:
+    def test_cli_approve_without_all_renders_review_without_mutating_draft(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
             tmp_path = Path(tmp)
             create_basic_fixture_repo(tmp_path)
@@ -2038,10 +2038,45 @@ class RepoOnboardingTests(unittest.TestCase):
 
             approve_result = self.run_cli(tmp_path, "approve", "fixture-repo")
 
-            self.assertNotEqual(approve_result.returncode, 0)
-            self.assertIn("approve requires --all", approve_result.stderr)
+            self.assertEqual(approve_result.returncode, 0, approve_result.stderr)
+            self.assertIn("Approval Review: fixture-repo", approve_result.stdout)
+            self.assertIn("Generated Artifacts", approve_result.stdout)
+            self.assertIn("Command Permissions Requested", approve_result.stdout)
+            self.assertIn("Risk Notes", approve_result.stdout)
+            self.assertIn("Unresolved Unknowns", approve_result.stdout)
+            self.assertIn("Prior Approved Diff", approve_result.stdout)
+            self.assertIn("No prior approved pack found", approve_result.stdout)
+            self.assertIn("harness approve fixture-repo --all", approve_result.stdout)
             self.assertEqual((root / "harness.yml").read_bytes(), config_before)
             self.assertFalse((root / "repos" / "fixture-repo" / "approval.yml").exists())
+
+    def test_cli_approve_review_shows_prior_approved_diff(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            tmp_path = Path(tmp)
+            create_basic_fixture_repo(tmp_path)
+            init_org_pack(tmp_path, "acme")
+            self.assertEqual(self.run_cli(tmp_path, "repo", "add", "fixture-repo").returncode, 0)
+            self.assertEqual(self.run_cli(tmp_path, "onboard", "fixture-repo").returncode, 0)
+            self.assertEqual(self.run_cli(tmp_path, "approve", "fixture-repo", "--all").returncode, 0)
+            root = tmp_path / DEFAULT_PACK_DIR
+            entries = load_repo_entries(root / "harness.yml")
+            save_repo_entries(
+                root / "harness.yml",
+                (replace(entries[0], coverage_status="draft"),),
+            )
+            pack_report = root / "repos" / "fixture-repo" / "pack-report.md"
+            pack_report.write_text(
+                pack_report.read_text(encoding="utf-8") + "\nLocal draft change.\n",
+                encoding="utf-8",
+            )
+
+            review_result = self.run_cli(tmp_path, "approve", "fixture-repo")
+
+            self.assertEqual(review_result.returncode, 0, review_result.stderr)
+            self.assertIn("Prior Approved Diff", review_result.stdout)
+            self.assertIn("Changed: 1", review_result.stdout)
+            self.assertIn("Added: 0", review_result.stdout)
+            self.assertIn("Removed: 0", review_result.stdout)
 
     def test_cli_onboard_rejects_unknown_repo_without_artifact_mutation(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:

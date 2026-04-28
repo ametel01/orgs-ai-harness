@@ -88,6 +88,46 @@ def approve_repo_all(root: Path, repo_id: str, *, rationale: str | None = None) 
     )
 
 
+def render_approval_review(root: Path, repo_id: str) -> str:
+    """Render a read-only review view for a draft pack."""
+
+    root = root.resolve()
+    entry = _find_draft_repo(root, repo_id)
+    artifact_root = root / "repos" / entry.id
+    artifacts = _artifact_inventory(root, artifact_root)
+    if not artifacts:
+        raise ApprovalError(f"repo {entry.id} has no generated draft artifacts to review")
+
+    unknowns = _open_unknowns(artifact_root / "unknowns.yml")
+    commands = _requested_commands(artifact_root, entry.id)
+    risks = _risk_notes(artifact_root, unknowns, commands)
+    diff = _prior_diff(root, artifact_root, artifacts)
+
+    lines = [
+        f"Approval Review: {entry.id}",
+        "",
+        "Generated Artifacts",
+        *[f"- {artifact}" for artifact in artifacts],
+        "",
+        "Command Permissions Requested",
+        *[f"- {command}" for command in commands],
+        "",
+        "Risk Notes",
+        *[f"- {risk}" for risk in risks],
+        "",
+        "Unresolved Unknowns",
+        *[f"- {unknown}" for unknown in unknowns],
+        "",
+        "Prior Approved Diff",
+        *[f"- {item}" for item in diff],
+        "",
+        "Next Commands",
+        f"- harness approve {entry.id} --all",
+        f"- harness approve {entry.id} --exclude <artifact>",
+    ]
+    return "\n".join(lines) + "\n"
+
+
 def _find_draft_repo(root: Path, repo_id: str) -> RepoEntry:
     normalized_repo_id = repo_id.strip()
     if not normalized_repo_id:
@@ -116,6 +156,97 @@ def _artifact_inventory(root: Path, artifact_root: Path) -> list[str]:
             continue
         artifacts.append(path.relative_to(root).as_posix())
     return artifacts
+
+
+def _open_unknowns(path: Path) -> list[str]:
+    if not path.is_file():
+        return ["unknowns.yml is missing"]
+    try:
+        artifact = json.loads(path.read_text(encoding="utf-8"))
+    except json.JSONDecodeError:
+        return ["unknowns.yml is malformed"]
+    unknowns = artifact.get("unknowns")
+    if not isinstance(unknowns, list):
+        return ["unknowns.yml does not contain an unknowns list"]
+    rendered = []
+    for unknown in unknowns:
+        if not isinstance(unknown, dict) or unknown.get("status") != "open":
+            continue
+        unknown_id = unknown.get("id", "unknown")
+        question = unknown.get("question", "unresolved question")
+        severity = unknown.get("severity", "unknown severity")
+        rendered.append(f"{unknown_id} [{severity}]: {question}")
+    return rendered or ["None"]
+
+
+def _requested_commands(artifact_root: Path, repo_id: str) -> list[str]:
+    commands = [f"harness validate {repo_id}"]
+    manifest_path = artifact_root / "scripts" / "manifest.yml"
+    if not manifest_path.is_file():
+        return commands
+    try:
+        manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
+    except json.JSONDecodeError:
+        commands.append("scripts/manifest.yml is malformed")
+        return commands
+    scripts = manifest.get("scripts")
+    if not isinstance(scripts, list):
+        commands.append("scripts/manifest.yml does not contain a scripts list")
+        return commands
+    for script in scripts:
+        if isinstance(script, dict) and isinstance(script.get("path"), str):
+            commands.append(f"python {artifact_root.name}/{script['path']}")
+    return commands
+
+
+def _risk_notes(artifact_root: Path, unknowns: list[str], commands: list[str]) -> list[str]:
+    risks = [
+        "Pack is generated and not verified by eval replay.",
+        "Approval will mark accepted artifacts as protected source-of-truth files.",
+    ]
+    if unknowns != ["None"]:
+        risks.append("Open unknowns remain and should be reviewed before approval.")
+    if any(command for command in commands if command != "harness validate"):
+        risks.append("Generated scripts and validation commands request local execution permission.")
+    report_path = artifact_root / "pack-report.md"
+    if report_path.is_file() and "not verified" in report_path.read_text(encoding="utf-8"):
+        risks.append("Pack report states the generated pack is not verified.")
+    return risks
+
+
+def _prior_diff(root: Path, artifact_root: Path, current_artifacts: list[str]) -> list[str]:
+    approval_path = artifact_root / APPROVAL_FILE
+    if not approval_path.is_file():
+        return ["No prior approved pack found."]
+    try:
+        approval = json.loads(approval_path.read_text(encoding="utf-8"))
+    except json.JSONDecodeError:
+        return ["Prior approval metadata is malformed."]
+
+    protected = approval.get("protected_artifacts")
+    if not isinstance(protected, list):
+        return ["Prior approval metadata has no protected artifact list."]
+    prior_hashes = {
+        item["path"]: item.get("sha256")
+        for item in protected
+        if isinstance(item, dict) and isinstance(item.get("path"), str)
+    }
+    current = set(current_artifacts)
+    prior = set(prior_hashes)
+    added = sorted(current - prior)
+    removed = sorted(prior - current)
+    changed = sorted(
+        path
+        for path in current & prior
+        if (root / path).is_file() and _sha256(root / path) != prior_hashes[path]
+    )
+    unchanged = len((current & prior) - set(changed))
+    return [
+        f"Added: {len(added)}",
+        f"Removed: {len(removed)}",
+        f"Changed: {len(changed)}",
+        f"Unchanged: {unchanged}",
+    ]
 
 
 def _update_repo_approval_state(root: Path, repo_id: str, coverage_status: str, pack_ref: str) -> None:
