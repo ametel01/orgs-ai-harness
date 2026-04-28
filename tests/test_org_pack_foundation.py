@@ -2026,6 +2026,51 @@ class RepoOnboardingTests(unittest.TestCase):
 
             self.assertEqual(validate_result.returncode, 0, validate_result.stderr)
 
+    def test_cli_approve_with_exclusion_protects_only_accepted_artifacts(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            tmp_path = Path(tmp)
+            create_basic_fixture_repo(tmp_path)
+            init_org_pack(tmp_path, "acme")
+            self.assertEqual(self.run_cli(tmp_path, "repo", "add", "fixture-repo").returncode, 0)
+            self.assertEqual(self.run_cli(tmp_path, "onboard", "fixture-repo").returncode, 0)
+            excluded = "repos/fixture-repo/skills/build-test-debug/SKILL.md"
+
+            approve_result = self.run_cli(tmp_path, "approve", "fixture-repo", "--exclude", excluded)
+
+            self.assertEqual(approve_result.returncode, 0, approve_result.stderr)
+            self.assertIn("excluded=1", approve_result.stdout)
+            root = tmp_path / DEFAULT_PACK_DIR
+            approval = json.loads((root / "repos" / "fixture-repo" / "approval.yml").read_text(encoding="utf-8"))
+            self.assertIn(excluded, approval["excluded_artifacts"])
+            self.assertNotIn(excluded, approval["approved_artifacts"])
+            protected_paths = {item["path"] for item in approval["protected_artifacts"]}
+            self.assertNotIn(excluded, protected_paths)
+            self.assertEqual(protected_paths, set(approval["approved_artifacts"]))
+            trace_path = root / "trace-summaries" / "approval-events.jsonl"
+            trace_events = [json.loads(line) for line in trace_path.read_text(encoding="utf-8").splitlines()]
+            self.assertEqual(trace_events[-1]["payload"]["excluded_artifacts"], [excluded])
+
+            validate_result = self.run_cli(tmp_path, "validate", "fixture-repo")
+
+            self.assertEqual(validate_result.returncode, 0, validate_result.stderr)
+
+    def test_cli_approve_rejects_invalid_exclusion_without_mutation(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            tmp_path = Path(tmp)
+            create_basic_fixture_repo(tmp_path)
+            init_org_pack(tmp_path, "acme")
+            self.assertEqual(self.run_cli(tmp_path, "repo", "add", "fixture-repo").returncode, 0)
+            self.assertEqual(self.run_cli(tmp_path, "onboard", "fixture-repo").returncode, 0)
+            root = tmp_path / DEFAULT_PACK_DIR
+            config_before = (root / "harness.yml").read_bytes()
+
+            approve_result = self.run_cli(tmp_path, "approve", "fixture-repo", "--exclude", "missing-artifact.md")
+
+            self.assertNotEqual(approve_result.returncode, 0)
+            self.assertIn("does not match a generated artifact", approve_result.stderr)
+            self.assertEqual((root / "harness.yml").read_bytes(), config_before)
+            self.assertFalse((root / "repos" / "fixture-repo" / "approval.yml").exists())
+
     def test_cli_approve_without_all_renders_review_without_mutating_draft(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
             tmp_path = Path(tmp)

@@ -6,7 +6,7 @@ import argparse
 import sys
 from pathlib import Path
 
-from orgs_ai_harness.approval import ApprovalError, approve_repo_all, render_approval_review
+from orgs_ai_harness.approval import ApprovalError, approve_repo, render_approval_review
 from orgs_ai_harness.org_pack import (
     OrgPackError,
     attach_org_pack,
@@ -84,6 +84,11 @@ def build_parser() -> argparse.ArgumentParser:
     approve_parser = subparsers.add_parser("approve", help="Review or approve a generated draft pack")
     approve_parser.add_argument("repo_id", help="Registered repo id to approve")
     approve_parser.add_argument("--all", action="store_true", help="Approve every generated draft artifact")
+    approve_parser.add_argument(
+        "--exclude",
+        action="append",
+        help="Approve the draft pack while excluding one generated artifact or artifact directory",
+    )
     approve_parser.add_argument("--rationale", help="Human rationale to record in the approval trace")
 
     return parser
@@ -145,13 +150,14 @@ def main(argv: list[str] | None = None) -> int:
 
         if args.command == "approve":
             root = resolve_default_root(Path.cwd())
-            if not args.all:
+            exclusions = tuple(args.exclude or ())
+            if not args.all and not exclusions:
                 print(render_approval_review(root, args.repo_id), end="")
                 return 0
-            result = approve_repo_all(root, args.repo_id, rationale=args.rationale)
+            result = approve_repo(root, args.repo_id, exclusions=exclusions, rationale=args.rationale)
             print(
-                f"Approved {len(result.approved_artifacts)} artifact(s) for repo "
-                f"{result.repo_id}; status=approved-unverified"
+                f"Approved {len(result.approved_artifacts)} artifact(s) for repo {result.repo_id}; "
+                f"excluded={len(result.excluded_artifacts)}; status=approved-unverified"
             )
             return 0
 

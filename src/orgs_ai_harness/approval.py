@@ -20,6 +20,7 @@ class ApprovalResult:
     repo_id: str
     approval_path: Path
     approved_artifacts: tuple[str, ...]
+    excluded_artifacts: tuple[str, ...]
     trace_path: Path
 
 
@@ -30,12 +31,28 @@ APPROVAL_TRACE_FILE = "approval-events.jsonl"
 def approve_repo_all(root: Path, repo_id: str, *, rationale: str | None = None) -> ApprovalResult:
     """Approve every generated artifact in a draft pack."""
 
+    return approve_repo(root, repo_id, exclusions=(), rationale=rationale)
+
+
+def approve_repo(
+    root: Path,
+    repo_id: str,
+    *,
+    exclusions: tuple[str, ...] = (),
+    rationale: str | None = None,
+) -> ApprovalResult:
+    """Approve a draft pack while optionally excluding generated artifacts."""
+
     root = root.resolve()
     entry = _find_draft_repo(root, repo_id)
     artifact_root = root / "repos" / entry.id
     artifacts = _artifact_inventory(root, artifact_root)
     if not artifacts:
         raise ApprovalError(f"repo {entry.id} has no generated draft artifacts to approve")
+    excluded_artifacts = _resolve_exclusions(root, artifact_root, artifacts, exclusions)
+    approved_artifacts = [artifact for artifact in artifacts if artifact not in set(excluded_artifacts)]
+    if not approved_artifacts:
+        raise ApprovalError(f"repo {entry.id} approval cannot exclude every generated artifact")
 
     timestamp = _timestamp()
     approval_path = artifact_root / APPROVAL_FILE
@@ -46,7 +63,7 @@ def approve_repo_all(root: Path, repo_id: str, *, rationale: str | None = None) 
             "sha256": _sha256(root / artifact),
             "protected": True,
         }
-        for artifact in artifacts
+        for artifact in approved_artifacts
     ]
     approval_metadata = {
         "schema_version": 1,
@@ -56,9 +73,9 @@ def approve_repo_all(root: Path, repo_id: str, *, rationale: str | None = None) 
         "pack_ref": pack_ref,
         "actor": "user",
         "timestamp": timestamp,
-        "rationale": rationale or "Approved full draft pack",
-        "approved_artifacts": artifacts,
-        "excluded_artifacts": [],
+        "rationale": rationale or _default_approval_rationale(excluded_artifacts),
+        "approved_artifacts": approved_artifacts,
+        "excluded_artifacts": excluded_artifacts,
         "protected_artifacts": protected_artifacts,
         "verified": False,
         "warnings": [
@@ -76,14 +93,15 @@ def approve_repo_all(root: Path, repo_id: str, *, rationale: str | None = None) 
         pack_ref=pack_ref,
         timestamp=timestamp,
         decision="approved",
-        excluded_artifacts=[],
+        excluded_artifacts=excluded_artifacts,
         rationale=approval_metadata["rationale"],
     )
 
     return ApprovalResult(
         repo_id=entry.id,
         approval_path=approval_path,
-        approved_artifacts=tuple(artifacts),
+        approved_artifacts=tuple(approved_artifacts),
+        excluded_artifacts=tuple(excluded_artifacts),
         trace_path=trace_path,
     )
 
@@ -156,6 +174,46 @@ def _artifact_inventory(root: Path, artifact_root: Path) -> list[str]:
             continue
         artifacts.append(path.relative_to(root).as_posix())
     return artifacts
+
+
+def _resolve_exclusions(
+    root: Path,
+    artifact_root: Path,
+    artifacts: list[str],
+    exclusions: tuple[str, ...],
+) -> list[str]:
+    resolved: set[str] = set()
+    artifact_set = set(artifacts)
+    for raw_exclusion in exclusions:
+        exclusion = raw_exclusion.strip()
+        if not exclusion:
+            raise ApprovalError("approval exclusion cannot be empty")
+        root_relative = _root_relative_exclusion(root, artifact_root, exclusion)
+        matches = [
+            artifact
+            for artifact in artifacts
+            if artifact == root_relative or artifact.startswith(f"{root_relative}/")
+        ]
+        if not matches and root_relative in artifact_set:
+            matches = [root_relative]
+        if not matches:
+            raise ApprovalError(f"approval exclusion does not match a generated artifact: {exclusion}")
+        resolved.update(matches)
+    return sorted(resolved)
+
+
+def _root_relative_exclusion(root: Path, artifact_root: Path, exclusion: str) -> str:
+    normalized = Path(exclusion).as_posix().strip("/")
+    artifact_prefix = artifact_root.relative_to(root).as_posix()
+    if normalized == artifact_prefix or normalized.startswith(f"{artifact_prefix}/"):
+        return normalized
+    return (artifact_root / normalized).relative_to(root).as_posix()
+
+
+def _default_approval_rationale(excluded_artifacts: list[str]) -> str:
+    if excluded_artifacts:
+        return "Approved draft pack with excluded artifacts"
+    return "Approved full draft pack"
 
 
 def _open_unknowns(path: Path) -> list[str]:
