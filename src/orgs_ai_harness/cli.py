@@ -16,6 +16,7 @@ from orgs_ai_harness.org_pack import (
     init_org_pack,
     resolve_default_root,
 )
+from orgs_ai_harness.proposals import ProposalError, improve_repo, list_proposals, render_proposal_show
 from orgs_ai_harness.repo_registry import (
     RepoEntry,
     RepoRegistryError,
@@ -124,6 +125,15 @@ def build_parser() -> argparse.ArgumentParser:
 
     explain_parser = subparsers.add_parser("explain", help="Explain harness state for one repository")
     explain_parser.add_argument("repo_id", help="Registered repo id to explain")
+
+    improve_parser = subparsers.add_parser("improve", help="Create evidence-backed improvement proposals")
+    improve_parser.add_argument("repo_id", help="Registered repo id to improve")
+
+    proposals_parser = subparsers.add_parser("proposals", help="Review generated proposals")
+    proposals_subparsers = proposals_parser.add_subparsers(dest="proposals_command", required=True)
+    proposals_subparsers.add_parser("list", help="List generated proposals")
+    proposals_show = proposals_subparsers.add_parser("show", help="Show one generated proposal")
+    proposals_show.add_argument("proposal_id", help="Proposal id to show")
 
     return parser
 
@@ -241,6 +251,32 @@ def main(argv: list[str] | None = None) -> int:
             print(render_explain(root, args.repo_id), end="")
             return 0
 
+        if args.command == "improve":
+            root = resolve_default_root(Path.cwd())
+            result = improve_repo(root, args.repo_id)
+            if result.proposal_id is None:
+                print(f"No proposal for {result.repo_id}; {result.reason}.")
+                return 0
+            print(f"Created proposal {result.proposal_id} for {result.repo_id}: {result.proposal_root}")
+            return 0
+
+        if args.command == "proposals":
+            root = resolve_default_root(Path.cwd())
+            if args.proposals_command == "list":
+                proposals = list_proposals(root)
+                if not proposals:
+                    print("No proposals.")
+                    return 0
+                for proposal in proposals:
+                    print(
+                        f"{proposal.proposal_id}\t{proposal.repo_id}\t"
+                        f"status={proposal.status}\trisk={proposal.risk}\t{proposal.summary}"
+                    )
+                return 0
+            if args.proposals_command == "show":
+                print(render_proposal_show(root, args.proposal_id), end="")
+                return 0
+
         if args.command == "repo":
             root = resolve_default_root(Path.cwd())
             if args.repo_command == "add":
@@ -318,6 +354,7 @@ def main(argv: list[str] | None = None) -> int:
         EvalReplayError,
         CacheManagerError,
         ExplainError,
+        ProposalError,
     ) as exc:
         print(f"error: {exc}", file=sys.stderr)
         return 1

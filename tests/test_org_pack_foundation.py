@@ -2798,6 +2798,80 @@ class RepoOnboardingTests(unittest.TestCase):
             for path, before in protected_before.items():
                 self.assertEqual((root / path).read_bytes(), before, path)
 
+    def test_cli_improve_reports_no_proposal_without_evidence(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            tmp_path = Path(tmp)
+            create_basic_fixture_repo(tmp_path)
+            init_org_pack(tmp_path, "acme")
+            self.assertEqual(self.run_cli(tmp_path, "repo", "add", "fixture-repo").returncode, 0)
+            self.assertEqual(self.run_cli(tmp_path, "onboard", "fixture-repo").returncode, 0)
+
+            improve_result = self.run_cli(tmp_path, "improve", "fixture-repo")
+            list_result = self.run_cli(tmp_path, "proposals", "list")
+
+            self.assertEqual(improve_result.returncode, 0, improve_result.stderr)
+            self.assertIn("No proposal for fixture-repo; insufficient evidence.", improve_result.stdout)
+            self.assertEqual(list_result.returncode, 0, list_result.stderr)
+            self.assertIn("No proposals.", list_result.stdout)
+
+    def test_cli_improve_creates_proposal_and_list_show_review_views(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            tmp_path = Path(tmp)
+            create_basic_fixture_repo(tmp_path)
+            init_org_pack(tmp_path, "acme")
+            self.assertEqual(self.run_cli(tmp_path, "repo", "add", "fixture-repo").returncode, 0)
+            self.assertEqual(self.run_cli(tmp_path, "onboard", "fixture-repo").returncode, 0)
+            root = tmp_path / DEFAULT_PACK_DIR
+            trace_path = root / "trace-summaries" / "eval-events.jsonl"
+            trace_path.write_text(
+                json.dumps(
+                    {
+                        "schema_version": 1,
+                        "event_id": "evt_eval_fixture_0001",
+                        "event_type": "scoring",
+                        "timestamp": "2026-04-28T00:00:00+00:00",
+                        "repo_id": "fixture-repo",
+                        "pack_ref": "repos/fixture-repo/approval.yml",
+                        "actor": "adapter",
+                        "adapter": "fixture",
+                        "payload": {
+                            "run": "skill_pack",
+                            "task_id": "command-selection-tests",
+                            "passed": False,
+                            "answer": "token=do-not-leak",
+                        },
+                    }
+                )
+                + "\n",
+                encoding="utf-8",
+            )
+
+            improve_result = self.run_cli(tmp_path, "improve", "fixture-repo")
+            list_result = self.run_cli(tmp_path, "proposals", "list")
+            show_result = self.run_cli(tmp_path, "proposals", "show", "prop_001")
+
+            self.assertEqual(improve_result.returncode, 0, improve_result.stderr)
+            self.assertIn("Created proposal prop_001 for fixture-repo", improve_result.stdout)
+            proposal_root = root / "proposals" / "prop_001"
+            self.assertTrue((proposal_root / "summary.md").is_file())
+            self.assertTrue((proposal_root / "evidence.jsonl").is_file())
+            self.assertTrue((proposal_root / "patch.diff").is_file())
+            metadata = json.loads((proposal_root / "metadata.yml").read_text(encoding="utf-8"))
+            self.assertEqual(metadata["repo_id"], "fixture-repo")
+            self.assertEqual(metadata["status"], "open")
+            self.assertEqual(metadata["risk"], "medium")
+            self.assertEqual(metadata["affected_evals"], ["command-selection-tests"])
+            self.assertIn("trace-summaries/eval-events.jsonl:1", metadata["evidence"])
+            evidence_text = (proposal_root / "evidence.jsonl").read_text(encoding="utf-8")
+            self.assertIn("[REDACTED]", evidence_text)
+            self.assertNotIn("do-not-leak", evidence_text)
+            self.assertEqual(list_result.returncode, 0, list_result.stderr)
+            self.assertIn("prop_001\tfixture-repo\tstatus=open\trisk=medium", list_result.stdout)
+            self.assertEqual(show_result.returncode, 0, show_result.stderr)
+            self.assertIn("Proposal: prop_001", show_result.stdout)
+            self.assertIn("Evidence References", show_result.stdout)
+            self.assertIn("Compact Diff", show_result.stdout)
+
     def test_cli_onboard_rejects_unknown_repo_without_artifact_mutation(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
             tmp_path = Path(tmp)
