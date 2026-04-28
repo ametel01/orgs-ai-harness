@@ -85,6 +85,7 @@ def validate_repo_onboarding(root: Path, repo_id: str) -> ValidationResult:
     evals_path = artifact_root / "evals" / "onboarding.yml"
     pack_report_path = artifact_root / "pack-report.md"
     script_manifest_path = artifact_root / "scripts" / "manifest.yml"
+    approval_path = artifact_root / "approval.yml"
 
     if not summary_path.is_file():
         errors.append(f"missing onboarding summary: {summary_path.relative_to(root)}")
@@ -111,6 +112,8 @@ def validate_repo_onboarding(root: Path, repo_id: str) -> ValidationResult:
         _validate_evals_artifact(evals_path, root, errors)
         _validate_script_manifest(script_manifest_path, artifact_root, root, errors)
         _validate_pack_report(pack_report_path, root, errors)
+
+    _validate_approval_metadata(root, normalized_repo_id, approval_path, errors)
 
     return ValidationResult(tuple(errors))
 
@@ -430,6 +433,70 @@ def _validate_pack_report(path: Path, root: Path, errors: list[str]) -> None:
         errors.append(f"pack-report.md must not imply approval or verification: {path.relative_to(root)}")
 
 
+def _validate_approval_metadata(root: Path, repo_id: str, path: Path, errors: list[str]) -> None:
+    entries = parse_repo_block(next(block for block in split_top_level_blocks((root / "harness.yml").read_text(encoding="utf-8")) if block.key == "repos"))
+    entry = next((candidate for candidate in entries if candidate.id == repo_id), None)
+    if entry is None or entry.coverage_status != "approved-unverified":
+        return
+
+    artifact = _load_json_artifact(path, "approval metadata", errors, root)
+    if not isinstance(artifact, dict):
+        return
+
+    if artifact.get("schema_version") != 1:
+        errors.append(f"approval.yml field schema_version must be 1: {path.relative_to(root)}")
+    if artifact.get("repo_id") != repo_id:
+        errors.append(f"approval.yml field repo_id must be {repo_id}: {path.relative_to(root)}")
+    if artifact.get("status") != "approved-unverified":
+        errors.append(f"approval.yml field status must be approved-unverified: {path.relative_to(root)}")
+    if artifact.get("decision") != "approved":
+        errors.append(f"approval.yml field decision must be approved: {path.relative_to(root)}")
+    if artifact.get("verified") is not False:
+        errors.append(f"approval.yml field verified must be false for approved-unverified packs")
+    if artifact.get("pack_ref") != entry.pack_ref:
+        errors.append(f"approval.yml field pack_ref must match harness.yml repo pack_ref")
+
+    approved_artifacts = artifact.get("approved_artifacts")
+    if not isinstance(approved_artifacts, list) or not approved_artifacts:
+        errors.append(f"approval.yml field approved_artifacts must be a non-empty list")
+        approved_artifacts = []
+    excluded_artifacts = artifact.get("excluded_artifacts")
+    if not isinstance(excluded_artifacts, list):
+        errors.append(f"approval.yml field excluded_artifacts must be a list")
+    protected_artifacts = artifact.get("protected_artifacts")
+    if not isinstance(protected_artifacts, list) or not protected_artifacts:
+        errors.append(f"approval.yml field protected_artifacts must be a non-empty list")
+        protected_artifacts = []
+
+    approved_paths = {item for item in approved_artifacts if isinstance(item, str)}
+    protected_paths: set[str] = set()
+    for index, protected in enumerate(protected_artifacts, start=1):
+        if not isinstance(protected, dict):
+            errors.append(f"approval.yml protected_artifacts item {index} must be an object")
+            continue
+        protected_path = protected.get("path")
+        if not isinstance(protected_path, str) or not protected_path.strip():
+            errors.append(f"approval.yml protected_artifacts item {index} field path must be a non-empty string")
+            continue
+        protected_paths.add(protected_path)
+        if protected.get("protected") is not True:
+            errors.append(f"approval.yml protected_artifacts item {index} field protected must be true")
+        if not isinstance(protected.get("sha256"), str) or not re.fullmatch(r"[a-f0-9]{64}", str(protected.get("sha256"))):
+            errors.append(f"approval.yml protected_artifacts item {index} field sha256 must be a hex digest")
+        artifact_path = root / protected_path
+        if not artifact_path.is_file():
+            errors.append(f"approval.yml protected_artifacts item {index} references missing artifact: {protected_path}")
+
+    if approved_paths and protected_paths != approved_paths:
+        errors.append("approval.yml protected_artifacts must exactly match approved_artifacts")
+
+    warnings = artifact.get("warnings")
+    if not isinstance(warnings, list) or not any(
+        isinstance(warning, dict) and warning.get("code") == "approved-unverified" for warning in warnings
+    ):
+        errors.append("approval.yml must include approved-unverified warning metadata")
+
+
 def _validate_repo_entry(
     repo_id: str,
     coverage_status: str,
@@ -445,12 +512,20 @@ def _validate_repo_entry(
             f"harness.yml repo id is invalid: {repo_id} "
             "(use letters, numbers, dots, underscores, or hyphens)"
         )
-    if coverage_status not in {"selected", "onboarding", "needs-investigation", "draft", "deactivated", "external"}:
+    if coverage_status not in {
+        "selected",
+        "onboarding",
+        "needs-investigation",
+        "draft",
+        "approved-unverified",
+        "deactivated",
+        "external",
+    }:
         errors.append(
             f"harness.yml repo {repo_id} has invalid coverage_status: {coverage_status} "
-            "(supported values: selected, onboarding, needs-investigation, draft, deactivated, external)"
+            "(supported values: selected, onboarding, needs-investigation, draft, approved-unverified, deactivated, external)"
         )
-    if coverage_status in {"selected", "onboarding", "needs-investigation", "draft"}:
+    if coverage_status in {"selected", "onboarding", "needs-investigation", "draft", "approved-unverified"}:
         if not active:
             errors.append(f"harness.yml repo {repo_id} with {coverage_status} coverage must be active")
         if external:

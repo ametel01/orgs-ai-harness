@@ -1989,6 +1989,60 @@ class RepoOnboardingTests(unittest.TestCase):
             self.assertEqual(validate_result.returncode, 0, validate_result.stderr)
             self.assertIn("Validation passed for fixture-repo", validate_result.stdout)
 
+    def test_cli_approve_all_transitions_to_approved_unverified_and_traces(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            tmp_path = Path(tmp)
+            create_basic_fixture_repo(tmp_path)
+            init_org_pack(tmp_path, "acme")
+            self.assertEqual(self.run_cli(tmp_path, "repo", "add", "fixture-repo").returncode, 0)
+            self.assertEqual(self.run_cli(tmp_path, "onboard", "fixture-repo").returncode, 0)
+
+            approve_result = self.run_cli(tmp_path, "approve", "fixture-repo", "--all")
+
+            self.assertEqual(approve_result.returncode, 0, approve_result.stderr)
+            self.assertIn("status=approved-unverified", approve_result.stdout)
+            root = tmp_path / DEFAULT_PACK_DIR
+            artifact_root = root / "repos" / "fixture-repo"
+            approval_path = artifact_root / "approval.yml"
+            approval = json.loads(approval_path.read_text(encoding="utf-8"))
+            self.assertEqual(approval["status"], "approved-unverified")
+            self.assertEqual(approval["decision"], "approved")
+            self.assertFalse(approval["verified"])
+            self.assertEqual(approval["excluded_artifacts"], [])
+            self.assertIn("repos/fixture-repo/pack-report.md", approval["approved_artifacts"])
+            protected_paths = {item["path"] for item in approval["protected_artifacts"]}
+            self.assertEqual(protected_paths, set(approval["approved_artifacts"]))
+            self.assertTrue(all(item["protected"] for item in approval["protected_artifacts"]))
+            entries = load_repo_entries(root / "harness.yml")
+            self.assertEqual(entries[0].coverage_status, "approved-unverified")
+            self.assertEqual(entries[0].pack_ref, "repos/fixture-repo/approval.yml")
+            trace_path = root / "trace-summaries" / "approval-events.jsonl"
+            trace_events = [json.loads(line) for line in trace_path.read_text(encoding="utf-8").splitlines()]
+            self.assertEqual(trace_events[-1]["event_type"], "approval")
+            self.assertEqual(trace_events[-1]["payload"]["decision"], "approved")
+            self.assertEqual(trace_events[-1]["payload"]["excluded_artifacts"], [])
+
+            validate_result = self.run_cli(tmp_path, "validate", "fixture-repo")
+
+            self.assertEqual(validate_result.returncode, 0, validate_result.stderr)
+
+    def test_cli_approve_requires_explicit_all_without_mutating_draft(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            tmp_path = Path(tmp)
+            create_basic_fixture_repo(tmp_path)
+            init_org_pack(tmp_path, "acme")
+            self.assertEqual(self.run_cli(tmp_path, "repo", "add", "fixture-repo").returncode, 0)
+            self.assertEqual(self.run_cli(tmp_path, "onboard", "fixture-repo").returncode, 0)
+            root = tmp_path / DEFAULT_PACK_DIR
+            config_before = (root / "harness.yml").read_bytes()
+
+            approve_result = self.run_cli(tmp_path, "approve", "fixture-repo")
+
+            self.assertNotEqual(approve_result.returncode, 0)
+            self.assertIn("approve requires --all", approve_result.stderr)
+            self.assertEqual((root / "harness.yml").read_bytes(), config_before)
+            self.assertFalse((root / "repos" / "fixture-repo" / "approval.yml").exists())
+
     def test_cli_onboard_rejects_unknown_repo_without_artifact_mutation(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
             tmp_path = Path(tmp)

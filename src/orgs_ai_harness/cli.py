@@ -6,6 +6,7 @@ import argparse
 import sys
 from pathlib import Path
 
+from orgs_ai_harness.approval import ApprovalError, approve_repo_all
 from orgs_ai_harness.org_pack import (
     OrgPackError,
     attach_org_pack,
@@ -80,6 +81,11 @@ def build_parser() -> argparse.ArgumentParser:
     validate_parser = subparsers.add_parser("validate", help="Validate the org skill pack")
     validate_parser.add_argument("repo_id", nargs="?", help="Optional repo id for repo-specific artifacts")
 
+    approve_parser = subparsers.add_parser("approve", help="Review or approve a generated draft pack")
+    approve_parser.add_argument("repo_id", help="Registered repo id to approve")
+    approve_parser.add_argument("--all", action="store_true", help="Approve every generated draft artifact")
+    approve_parser.add_argument("--rationale", help="Human rationale to record in the approval trace")
+
     return parser
 
 
@@ -135,6 +141,17 @@ def main(argv: list[str] | None = None) -> int:
                 return 0
             result = onboard_repo(root, args.repo_id)
             print(f"Generated draft pack for repo {result.repo_id} into {result.artifact_root}")
+            return 0
+
+        if args.command == "approve":
+            root = resolve_default_root(Path.cwd())
+            if not args.all:
+                raise ApprovalError("approve requires --all until review-only approval view is available")
+            result = approve_repo_all(root, args.repo_id, rationale=args.rationale)
+            print(
+                f"Approved {len(result.approved_artifacts)} artifact(s) for repo "
+                f"{result.repo_id}; status=approved-unverified"
+            )
             return 0
 
         if args.command == "repo":
@@ -205,7 +222,7 @@ def main(argv: list[str] | None = None) -> int:
                     )
                 return 0
 
-    except (OrgPackError, RepoRegistryError, RepoDiscoveryError, RepoOnboardingError) as exc:
+    except (OrgPackError, RepoRegistryError, RepoDiscoveryError, RepoOnboardingError, ApprovalError) as exc:
         print(f"error: {exc}", file=sys.stderr)
         return 1
 
