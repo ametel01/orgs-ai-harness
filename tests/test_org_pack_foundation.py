@@ -2828,6 +2828,75 @@ class RepoOnboardingTests(unittest.TestCase):
             for path, before in protected_before.items():
                 self.assertEqual((root / path).read_bytes(), before, path)
 
+    def test_sprint_09_improve_proposal_refresh_acceptance_smoke(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            tmp_path = Path(tmp)
+            repo_path = create_basic_fixture_repo(tmp_path)
+            self.commit_fixture_repo(repo_path, "initial")
+            init_org_pack(tmp_path, "acme")
+            self.assertEqual(self.run_cli(tmp_path, "repo", "add", "fixture-repo").returncode, 0)
+            self.assertEqual(self.run_cli(tmp_path, "onboard", "fixture-repo").returncode, 0)
+            self.assertEqual(self.run_cli(tmp_path, "approve", "fixture-repo", "--all").returncode, 0)
+            root = tmp_path / DEFAULT_PACK_DIR
+            trace_path = root / "trace-summaries" / "eval-events.jsonl"
+            trace_path.write_text(
+                json.dumps(
+                    {
+                        "schema_version": 1,
+                        "event_id": "evt_eval_fixture_0001",
+                        "event_type": "scoring",
+                        "timestamp": "2026-04-28T00:00:00+00:00",
+                        "repo_id": "fixture-repo",
+                        "pack_ref": "repos/fixture-repo/approval.yml",
+                        "actor": "adapter",
+                        "adapter": "fixture",
+                        "payload": {
+                            "run": "skill_pack",
+                            "task_id": "command-selection-tests",
+                            "passed": False,
+                            "answer": "token=do-not-leak",
+                        },
+                    }
+                )
+                + "\n",
+                encoding="utf-8",
+            )
+
+            improve_result = self.run_cli(tmp_path, "improve", "fixture-repo")
+            list_result = self.run_cli(tmp_path, "proposals", "list")
+            show_result = self.run_cli(tmp_path, "proposals", "show", "prop_001")
+            apply_result = self.run_cli(tmp_path, "proposals", "apply", "prop_001", "--yes")
+            validate_result = self.run_cli(tmp_path, "validate", "fixture-repo")
+            cache_refresh_result = self.run_cli(tmp_path, "cache", "refresh", "fixture-repo")
+            export_result = self.run_cli(tmp_path, "export", "generic", "fixture-repo")
+            (repo_path / "README.md").write_text("# Fixture Repo\n\nChanged for Sprint 09 refresh.\n", encoding="utf-8")
+            self.commit_fixture_repo(repo_path, "refresh source change")
+            refresh_result = self.run_cli(tmp_path, "refresh", "fixture-repo")
+
+            self.assertEqual(improve_result.returncode, 0, improve_result.stderr)
+            self.assertEqual(list_result.returncode, 0, list_result.stderr)
+            self.assertEqual(show_result.returncode, 0, show_result.stderr)
+            self.assertEqual(apply_result.returncode, 0, apply_result.stderr)
+            self.assertEqual(validate_result.returncode, 0, validate_result.stderr)
+            self.assertEqual(cache_refresh_result.returncode, 0, cache_refresh_result.stderr)
+            self.assertEqual(export_result.returncode, 0, export_result.stderr)
+            self.assertEqual(refresh_result.returncode, 0, refresh_result.stderr)
+            self.assertIn("Created proposal prop_001 for fixture-repo", improve_result.stdout)
+            self.assertIn("prop_001\tfixture-repo\tstatus=open\trisk=medium", list_result.stdout)
+            self.assertIn("Proposal: prop_001", show_result.stdout)
+            self.assertIn("Applied proposal prop_001 for fixture-repo", apply_result.stdout)
+            self.assertIn("Validation passed for fixture-repo", validate_result.stdout)
+            self.assertIn("Created refresh proposal prop_002 for fixture-repo", refresh_result.stdout)
+            first_metadata = json.loads((root / "proposals" / "prop_001" / "metadata.yml").read_text(encoding="utf-8"))
+            refresh_metadata = json.loads((root / "proposals" / "prop_002" / "metadata.yml").read_text(encoding="utf-8"))
+            self.assertEqual(first_metadata["status"], "applied")
+            self.assertEqual(refresh_metadata["status"], "open")
+            self.assertEqual(refresh_metadata["proposal_type"], "onboarding summary updates")
+            evidence_text = (root / "proposals" / "prop_001" / "evidence.jsonl").read_text(encoding="utf-8")
+            self.assertNotIn("do-not-leak", evidence_text)
+            exported_skill = repo_path / ".agent-harness" / "cache" / "exports" / "generic" / "skills" / "build-test-debug" / "SKILL.md"
+            self.assertIn("Proposal note: review recent trace evidence", exported_skill.read_text(encoding="utf-8"))
+
     def test_cli_improve_reports_no_proposal_without_evidence(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
             tmp_path = Path(tmp)
