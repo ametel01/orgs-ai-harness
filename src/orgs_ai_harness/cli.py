@@ -112,7 +112,7 @@ def build_parser() -> argparse.ArgumentParser:
     cache_refresh.add_argument("repo_id", help="Registered repo id to refresh")
 
     export_parser = subparsers.add_parser("export", help="Export a cached pack for an agent runtime")
-    export_parser.add_argument("target", help="Export target: generic")
+    export_parser.add_argument("target", help="Export target: generic or codex")
     export_parser.add_argument("repo_id", help="Registered repo id to export")
     export_parser.add_argument("--allow-draft", action="store_true", help="Allow exporting draft packs intentionally")
     export_parser.add_argument(

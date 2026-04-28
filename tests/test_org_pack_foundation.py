@@ -2175,6 +2175,38 @@ class RepoOnboardingTests(unittest.TestCase):
             self.assertIn("pass --development", blocked_result.stderr)
             self.assertEqual(development_result.returncode, 0, development_result.stderr)
 
+    def test_export_codex_writes_managed_layout_from_same_cached_pack(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            tmp_path = Path(tmp)
+            repo_path = create_basic_fixture_repo(tmp_path)
+            init_org_pack(tmp_path, "acme")
+            self.assertEqual(self.run_cli(tmp_path, "repo", "add", "fixture-repo").returncode, 0)
+            self.assertEqual(self.run_cli(tmp_path, "onboard", "fixture-repo").returncode, 0)
+            self.assertEqual(self.run_cli(tmp_path, "approve", "fixture-repo", "--all").returncode, 0)
+            root = tmp_path / DEFAULT_PACK_DIR
+            refresh_cache(root, "fixture-repo")
+
+            cli_result = self.run_cli(tmp_path, "export", "codex", "fixture-repo")
+
+            self.assertEqual(cli_result.returncode, 0, cli_result.stderr)
+            self.assertIn("Exported codex pack for fixture-repo", cli_result.stdout)
+            export_root = (repo_path / ".agent-harness" / "cache" / "exports" / "codex").resolve()
+            exported_paths = sorted(
+                path.relative_to(export_root).as_posix()
+                for path in export_root.rglob("*")
+                if path.is_file()
+            )
+            self.assertIn("pack-status.json", exported_paths)
+            self.assertIn("resolvers.yml", exported_paths)
+            self.assertIn("skills/build-test-debug/SKILL.md", exported_paths)
+            self.assertIn("skills/repo-architecture/SKILL.md", exported_paths)
+            status = json.loads((export_root / "pack-status.json").read_text(encoding="utf-8"))
+            self.assertEqual(status["target"], "codex")
+            self.assertEqual(status["status"], "approved-unverified")
+            self.assertTrue(
+                any(warning["code"] == "approved-unverified" for warning in status["warnings"])
+            )
+
     def test_cli_approve_with_exclusion_protects_only_accepted_artifacts(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
             tmp_path = Path(tmp)

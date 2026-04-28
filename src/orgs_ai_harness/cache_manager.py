@@ -16,6 +16,9 @@ class CacheManagerError(Exception):
     """Raised when cache refresh cannot be completed."""
 
 
+SUPPORTED_EXPORT_TARGETS = {"generic", "codex"}
+
+
 @dataclass(frozen=True)
 class CacheRefreshResult:
     repo_id: str
@@ -110,7 +113,7 @@ def export_cached_pack(
 
     root = root.resolve()
     normalized_target = target.strip()
-    if normalized_target != "generic":
+    if normalized_target not in SUPPORTED_EXPORT_TARGETS:
         raise CacheManagerError(f"unsupported export target: {target}")
     entry = _find_local_repo(root, repo_id)
     repo_path = _resolve_repo_path(root, entry)
