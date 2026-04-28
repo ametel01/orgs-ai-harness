@@ -79,6 +79,7 @@ def validate_repo_onboarding(root: Path, repo_id: str) -> ValidationResult:
     summary_path = artifact_root / "onboarding-summary.md"
     unknowns_path = artifact_root / "unknowns.yml"
     manifest_path = artifact_root / "scan" / "scan-manifest.yml"
+    hypothesis_map_path = artifact_root / "scan" / "hypothesis-map.yml"
 
     if not summary_path.is_file():
         errors.append(f"missing onboarding summary: {summary_path.relative_to(root)}")
@@ -92,6 +93,10 @@ def validate_repo_onboarding(root: Path, repo_id: str) -> ValidationResult:
     manifest = _load_json_artifact(manifest_path, "scan manifest", errors, root)
     if isinstance(manifest, dict):
         _validate_scan_manifest_artifact(manifest, manifest_path, root, errors)
+
+    hypothesis_map = _load_json_artifact(hypothesis_map_path, "hypothesis map", errors, root)
+    if isinstance(hypothesis_map, dict):
+        _validate_hypothesis_map_artifact(hypothesis_map, hypothesis_map_path, root, errors)
 
     return ValidationResult(tuple(errors))
 
@@ -194,8 +199,54 @@ def _validate_scan_manifest_artifact(artifact: dict[str, object], path: Path, ro
     skipped_paths = artifact.get("skipped_paths")
     if not isinstance(scanned_paths, list):
         errors.append(f"scan manifest field scanned_paths must be a list: {path.relative_to(root)}")
+    else:
+        for index, record in enumerate(scanned_paths, start=1):
+            _validate_path_record(record, f"scan manifest scanned_paths item {index}", require_reason=False, errors=errors)
     if not isinstance(skipped_paths, list):
         errors.append(f"scan manifest field skipped_paths must be a list: {path.relative_to(root)}")
+    else:
+        for index, record in enumerate(skipped_paths, start=1):
+            _validate_path_record(record, f"scan manifest skipped_paths item {index}", require_reason=True, errors=errors)
+
+
+def _validate_path_record(record: object, label: str, *, require_reason: bool, errors: list[str]) -> None:
+    if not isinstance(record, dict):
+        errors.append(f"{label} must be an object")
+        return
+    if not isinstance(record.get("path"), str) or not str(record.get("path")).strip():
+        errors.append(f"{label} field path must be a non-empty string")
+    if require_reason and (not isinstance(record.get("reason"), str) or not str(record.get("reason")).strip()):
+        errors.append(f"{label} field reason must be a non-empty string")
+
+
+def _validate_hypothesis_map_artifact(
+    artifact: dict[str, object],
+    path: Path,
+    root: Path,
+    errors: list[str],
+) -> None:
+    if not isinstance(artifact.get("repo_id"), str) or not str(artifact.get("repo_id")).strip():
+        errors.append(f"hypothesis map field repo_id must be a non-empty string: {path.relative_to(root)}")
+    seed_context = artifact.get("seed_context")
+    if not isinstance(seed_context, dict):
+        errors.append(f"hypothesis map field seed_context must be an object: {path.relative_to(root)}")
+    evidence_categories = artifact.get("evidence_categories")
+    if not isinstance(evidence_categories, dict):
+        errors.append(f"hypothesis map field evidence_categories must be an object: {path.relative_to(root)}")
+    hypotheses = artifact.get("hypotheses")
+    if not isinstance(hypotheses, list):
+        errors.append(f"hypothesis map field hypotheses must be a list: {path.relative_to(root)}")
+        return
+    for index, hypothesis in enumerate(hypotheses, start=1):
+        if not isinstance(hypothesis, dict):
+            errors.append(f"hypothesis map item {index} must be an object")
+            continue
+        if not isinstance(hypothesis.get("name"), str) or not str(hypothesis.get("name")).strip():
+            errors.append(f"hypothesis map item {index} field name must be a non-empty string")
+        if not isinstance(hypothesis.get("evidence_paths"), list):
+            errors.append(f"hypothesis map item {index} field evidence_paths must be a list")
+        if not isinstance(hypothesis.get("unknown"), bool):
+            errors.append(f"hypothesis map item {index} field unknown must be true or false")
 
 
 def _validate_repo_entry(

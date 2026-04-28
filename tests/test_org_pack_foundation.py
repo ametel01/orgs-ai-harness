@@ -1839,6 +1839,15 @@ class RepoOnboardingTests(unittest.TestCase):
             check=False,
         )
 
+    def prepare_scanned_fixture(self, tmp_path: Path) -> Path:
+        create_basic_fixture_repo(tmp_path)
+        init_org_pack(tmp_path, "acme")
+        add_result = self.run_cli(tmp_path, "repo", "add", "fixture-repo")
+        self.assertEqual(add_result.returncode, 0, add_result.stderr)
+        scan_result = self.run_cli(tmp_path, "onboard", "fixture-repo", "--scan-only")
+        self.assertEqual(scan_result.returncode, 0, scan_result.stderr)
+        return tmp_path / DEFAULT_PACK_DIR / "repos" / "fixture-repo"
+
     def test_cli_onboard_scan_only_writes_summary_unknowns_and_manifest(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
             tmp_path = Path(tmp)
@@ -2058,6 +2067,70 @@ class RepoOnboardingTests(unittest.TestCase):
             validate_result = self.run_cli(tmp_path, "validate", "fixture-repo")
 
             self.assertEqual(validate_result.returncode, 0, validate_result.stderr)
+
+    def test_validate_repo_reports_missing_onboarding_summary(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            tmp_path = Path(tmp)
+            artifact_root = self.prepare_scanned_fixture(tmp_path)
+            (artifact_root / "onboarding-summary.md").unlink()
+
+            validate_result = self.run_cli(tmp_path, "validate", "fixture-repo")
+
+            self.assertNotEqual(validate_result.returncode, 0)
+            self.assertIn("missing onboarding summary", validate_result.stderr)
+
+    def test_validate_repo_reports_invalid_unknown_severity(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            tmp_path = Path(tmp)
+            artifact_root = self.prepare_scanned_fixture(tmp_path)
+            unknowns_path = artifact_root / "unknowns.yml"
+            unknowns = json.loads(unknowns_path.read_text(encoding="utf-8"))
+            unknowns["unknowns"][0]["severity"] = "urgent"
+            unknowns_path.write_text(json.dumps(unknowns), encoding="utf-8")
+
+            validate_result = self.run_cli(tmp_path, "validate", "fixture-repo")
+
+            self.assertNotEqual(validate_result.returncode, 0)
+            self.assertIn("invalid severity", validate_result.stderr)
+
+    def test_validate_repo_reports_missing_scan_manifest(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            tmp_path = Path(tmp)
+            artifact_root = self.prepare_scanned_fixture(tmp_path)
+            (artifact_root / "scan" / "scan-manifest.yml").unlink()
+
+            validate_result = self.run_cli(tmp_path, "validate", "fixture-repo")
+
+            self.assertNotEqual(validate_result.returncode, 0)
+            self.assertIn("missing scan manifest", validate_result.stderr)
+
+    def test_validate_repo_reports_malformed_skipped_path_record(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            tmp_path = Path(tmp)
+            artifact_root = self.prepare_scanned_fixture(tmp_path)
+            manifest_path = artifact_root / "scan" / "scan-manifest.yml"
+            manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
+            manifest["skipped_paths"] = [{"reason": "missing path"}]
+            manifest_path.write_text(json.dumps(manifest), encoding="utf-8")
+
+            validate_result = self.run_cli(tmp_path, "validate", "fixture-repo")
+
+            self.assertNotEqual(validate_result.returncode, 0)
+            self.assertIn("skipped_paths item 1 field path", validate_result.stderr)
+
+    def test_validate_repo_reports_malformed_hypothesis_map(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            tmp_path = Path(tmp)
+            artifact_root = self.prepare_scanned_fixture(tmp_path)
+            hypothesis_path = artifact_root / "scan" / "hypothesis-map.yml"
+            hypothesis_map = json.loads(hypothesis_path.read_text(encoding="utf-8"))
+            hypothesis_map["hypotheses"][0]["evidence_paths"] = "README.md"
+            hypothesis_path.write_text(json.dumps(hypothesis_map), encoding="utf-8")
+
+            validate_result = self.run_cli(tmp_path, "validate", "fixture-repo")
+
+            self.assertNotEqual(validate_result.returncode, 0)
+            self.assertIn("field evidence_paths must be a list", validate_result.stderr)
 
 
 if __name__ == "__main__":
