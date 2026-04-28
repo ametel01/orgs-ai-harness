@@ -30,7 +30,7 @@ from orgs_ai_harness.repo_discovery import (
     register_discovered_repos,
     select_discovered_repos,
 )
-from orgs_ai_harness.repo_onboarding import RepoOnboardingError, scan_repo_only
+from orgs_ai_harness.repo_onboarding import RepoOnboardingError, onboard_repo, scan_repo_only
 from orgs_ai_harness.validation import validate_org_pack, validate_repo_onboarding
 
 
@@ -129,10 +129,12 @@ def main(argv: list[str] | None = None) -> int:
 
         if args.command == "onboard":
             root = resolve_default_root(Path.cwd())
-            if not args.scan_only:
-                raise RepoOnboardingError("onboard requires --scan-only in Sprint 04")
-            result = scan_repo_only(root, args.repo_id)
-            print(f"Scanned repo {result.repo_id} into {result.artifact_root}")
+            if args.scan_only:
+                result = scan_repo_only(root, args.repo_id)
+                print(f"Scanned repo {result.repo_id} into {result.artifact_root}")
+                return 0
+            result = onboard_repo(root, args.repo_id)
+            print(f"Generated draft pack for repo {result.repo_id} into {result.artifact_root}")
             return 0
 
         if args.command == "repo":

@@ -1961,18 +1961,33 @@ class RepoOnboardingTests(unittest.TestCase):
             self.assertTrue(unknown_hypotheses)
             self.assertIn("unk_001", hypothesis_map["unknown_refs"])
 
-    def test_cli_onboard_requires_scan_only_without_artifact_mutation(self) -> None:
+    def test_cli_onboard_generates_draft_pack_and_validates(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
             tmp_path = Path(tmp)
             create_basic_fixture_repo(tmp_path)
             init_org_pack(tmp_path, "acme")
             self.assertEqual(self.run_cli(tmp_path, "repo", "add", "fixture-repo").returncode, 0)
 
-            scan_result = self.run_cli(tmp_path, "onboard", "fixture-repo")
+            onboard_result = self.run_cli(tmp_path, "onboard", "fixture-repo")
 
-            self.assertNotEqual(scan_result.returncode, 0)
-            self.assertIn("requires --scan-only", scan_result.stderr)
-            self.assertFalse((tmp_path / DEFAULT_PACK_DIR / "repos" / "fixture-repo").exists())
+            self.assertEqual(onboard_result.returncode, 0, onboard_result.stderr)
+            self.assertIn("Generated draft pack for repo fixture-repo", onboard_result.stdout)
+            artifact_root = tmp_path / DEFAULT_PACK_DIR / "repos" / "fixture-repo"
+            self.assertTrue((artifact_root / "skills" / "build-test-debug" / "SKILL.md").is_file())
+            self.assertTrue((artifact_root / "skills" / "repo-architecture" / "references" / "repo-evidence.md").is_file())
+            self.assertTrue((artifact_root / "resolvers.yml").is_file())
+            self.assertTrue((artifact_root / "evals" / "onboarding.yml").is_file())
+            self.assertTrue((artifact_root / "scripts" / "check-pack-shape.py").is_file())
+            self.assertTrue((artifact_root / "scripts" / "manifest.yml").is_file())
+            self.assertTrue((artifact_root / "pack-report.md").is_file())
+            self.assertIn("Status: draft", (artifact_root / "pack-report.md").read_text(encoding="utf-8"))
+            entries = load_repo_entries(tmp_path / DEFAULT_PACK_DIR / "harness.yml")
+            self.assertEqual(entries[0].coverage_status, "draft")
+
+            validate_result = self.run_cli(tmp_path, "validate", "fixture-repo")
+
+            self.assertEqual(validate_result.returncode, 0, validate_result.stderr)
+            self.assertIn("Validation passed for fixture-repo", validate_result.stdout)
 
     def test_cli_onboard_rejects_unknown_repo_without_artifact_mutation(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
@@ -2156,6 +2171,116 @@ class RepoOnboardingTests(unittest.TestCase):
 
             self.assertNotEqual(validate_result.returncode, 0)
             self.assertIn("field evidence_paths must be a list", validate_result.stderr)
+
+    def test_validate_repo_reports_broken_generated_skill_name(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            tmp_path = Path(tmp)
+            create_basic_fixture_repo(tmp_path)
+            init_org_pack(tmp_path, "acme")
+            self.assertEqual(self.run_cli(tmp_path, "repo", "add", "fixture-repo").returncode, 0)
+            self.assertEqual(self.run_cli(tmp_path, "onboard", "fixture-repo").returncode, 0)
+            artifact_root = tmp_path / DEFAULT_PACK_DIR / "repos" / "fixture-repo"
+            bad_root = artifact_root / "skills" / "Bad--Skill"
+            (artifact_root / "skills" / "build-test-debug").rename(bad_root)
+
+            validate_result = self.run_cli(tmp_path, "validate", "fixture-repo")
+
+            self.assertNotEqual(validate_result.returncode, 0)
+            self.assertIn("generated skill directory name is invalid", validate_result.stderr)
+            self.assertIn("frontmatter name must match directory", validate_result.stderr)
+
+    def test_validate_repo_reports_broken_skill_reference_link(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            tmp_path = Path(tmp)
+            create_basic_fixture_repo(tmp_path)
+            init_org_pack(tmp_path, "acme")
+            self.assertEqual(self.run_cli(tmp_path, "repo", "add", "fixture-repo").returncode, 0)
+            self.assertEqual(self.run_cli(tmp_path, "onboard", "fixture-repo").returncode, 0)
+            skill_path = (
+                tmp_path
+                / DEFAULT_PACK_DIR
+                / "repos"
+                / "fixture-repo"
+                / "skills"
+                / "build-test-debug"
+                / "SKILL.md"
+            )
+            skill_path.write_text(
+                skill_path.read_text(encoding="utf-8").replace(
+                    "references/repo-evidence.md",
+                    "references/missing.md",
+                ),
+                encoding="utf-8",
+            )
+
+            validate_result = self.run_cli(tmp_path, "validate", "fixture-repo")
+
+            self.assertNotEqual(validate_result.returncode, 0)
+            self.assertIn("broken reference link", validate_result.stderr)
+
+    def test_validate_repo_reports_broken_resolver_reference(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            tmp_path = Path(tmp)
+            create_basic_fixture_repo(tmp_path)
+            init_org_pack(tmp_path, "acme")
+            self.assertEqual(self.run_cli(tmp_path, "repo", "add", "fixture-repo").returncode, 0)
+            self.assertEqual(self.run_cli(tmp_path, "onboard", "fixture-repo").returncode, 0)
+            resolvers_path = tmp_path / DEFAULT_PACK_DIR / "repos" / "fixture-repo" / "resolvers.yml"
+            resolvers = json.loads(resolvers_path.read_text(encoding="utf-8"))
+            resolvers["resolvers"][0]["skill"] = "missing-skill"
+            resolvers_path.write_text(json.dumps(resolvers), encoding="utf-8")
+
+            validate_result = self.run_cli(tmp_path, "validate", "fixture-repo")
+
+            self.assertNotEqual(validate_result.returncode, 0)
+            self.assertIn("references missing skill: missing-skill", validate_result.stderr)
+
+    def test_validate_repo_reports_invalid_eval_schema(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            tmp_path = Path(tmp)
+            create_basic_fixture_repo(tmp_path)
+            init_org_pack(tmp_path, "acme")
+            self.assertEqual(self.run_cli(tmp_path, "repo", "add", "fixture-repo").returncode, 0)
+            self.assertEqual(self.run_cli(tmp_path, "onboard", "fixture-repo").returncode, 0)
+            evals_path = tmp_path / DEFAULT_PACK_DIR / "repos" / "fixture-repo" / "evals" / "onboarding.yml"
+            evals = json.loads(evals_path.read_text(encoding="utf-8"))
+            evals["tasks"][0]["expected_files"] = "onboarding-summary.md"
+            evals_path.write_text(json.dumps(evals), encoding="utf-8")
+
+            validate_result = self.run_cli(tmp_path, "validate", "fixture-repo")
+
+            self.assertNotEqual(validate_result.returncode, 0)
+            self.assertIn("field expected_files must be a list", validate_result.stderr)
+
+    def test_validate_repo_reports_invalid_script_policy_metadata(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            tmp_path = Path(tmp)
+            create_basic_fixture_repo(tmp_path)
+            init_org_pack(tmp_path, "acme")
+            self.assertEqual(self.run_cli(tmp_path, "repo", "add", "fixture-repo").returncode, 0)
+            self.assertEqual(self.run_cli(tmp_path, "onboard", "fixture-repo").returncode, 0)
+            manifest_path = tmp_path / DEFAULT_PACK_DIR / "repos" / "fixture-repo" / "scripts" / "manifest.yml"
+            manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
+            manifest["scripts"][0]["review_required"] = False
+            manifest_path.write_text(json.dumps(manifest), encoding="utf-8")
+
+            validate_result = self.run_cli(tmp_path, "validate", "fixture-repo")
+
+            self.assertNotEqual(validate_result.returncode, 0)
+            self.assertIn("field review_required must be true", validate_result.stderr)
+
+    def test_onboard_marks_one_repo_org_skills_as_candidates(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            tmp_path = Path(tmp)
+            create_basic_fixture_repo(tmp_path)
+            init_org_pack(tmp_path, "acme")
+            self.assertEqual(self.run_cli(tmp_path, "repo", "add", "fixture-repo").returncode, 0)
+            self.assertEqual(self.run_cli(tmp_path, "onboard", "fixture-repo").returncode, 0)
+            unknowns_path = tmp_path / DEFAULT_PACK_DIR / "repos" / "fixture-repo" / "unknowns.yml"
+            unknowns = json.loads(unknowns_path.read_text(encoding="utf-8"))
+
+            self.assertEqual(unknowns["candidate_org_skills"][0]["status"], "candidate")
+            self.assertIn("cross-repo review", unknowns["candidate_org_skills"][0]["reason"])
 
     def test_validate_rejects_inactive_needs_investigation_status(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
