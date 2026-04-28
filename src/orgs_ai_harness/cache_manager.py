@@ -50,6 +50,7 @@ def refresh_cache(root: Path, repo_id: str) -> CacheRefreshResult:
     source_pack_ref = _source_pack_ref(entry, approval)
     pack_ref = _pack_commit_ref(root, artifact_root, approval)
     cache_root = repo_path / ".agent-harness" / "cache"
+    applied_proposals = _applied_proposal_ids(root, entry.id)
 
     if cache_root.exists():
         shutil.rmtree(cache_root)
@@ -65,6 +66,7 @@ def refresh_cache(root: Path, repo_id: str) -> CacheRefreshResult:
                 "pack_ref": pack_ref,
                 "source_pack_ref": source_pack_ref,
                 "org_skill_pack": str(root),
+                "applied_proposals": applied_proposals,
                 "warnings": _warnings(approval, status),
             },
             indent=2,
@@ -119,6 +121,7 @@ def export_cached_pack(
     repo_path = _resolve_repo_path(root, entry)
     cache_root = repo_path / ".agent-harness" / "cache"
     metadata = _load_cache_metadata(cache_root)
+    _ensure_cache_includes_applied_proposals(root, entry.id, metadata)
     status = _metadata_status(metadata)
     _enforce_export_policy(entry.id, status, allow_draft=allow_draft, development=development)
 
@@ -301,7 +304,15 @@ def _pack_commit_ref(root: Path, artifact_root: Path, approval: dict[str, object
         check=False,
     )
     if result.returncode == 0:
-        return result.stdout.strip()
+        status_result = subprocess.run(
+            ["git", "status", "--porcelain", "--", str(artifact_root.relative_to(root))],
+            cwd=root,
+            text=True,
+            capture_output=True,
+            check=False,
+        )
+        if status_result.returncode == 0 and not status_result.stdout.strip():
+            return result.stdout.strip()
 
     hasher = hashlib.sha256()
     for relative in _approved_artifacts(approval):
@@ -314,6 +325,39 @@ def _pack_commit_ref(root: Path, artifact_root: Path, approval: dict[str, object
     if hasher.digest() != hashlib.sha256().digest():
         return hasher.hexdigest()
     return hashlib.sha256(str(artifact_root).encode("utf-8")).hexdigest()
+
+
+def _ensure_cache_includes_applied_proposals(root: Path, repo_id: str, metadata: dict[str, object]) -> None:
+    current = set(_applied_proposal_ids(root, repo_id))
+    cached_value = metadata.get("applied_proposals")
+    cached = set(item for item in cached_value if isinstance(item, str)) if isinstance(cached_value, list) else set()
+    missing = sorted(current - cached)
+    if missing:
+        raise CacheManagerError(
+            f"repo {repo_id} cache is stale; run 'harness cache refresh {repo_id}' "
+            f"to include applied proposal(s): {', '.join(missing)}"
+        )
+
+
+def _applied_proposal_ids(root: Path, repo_id: str) -> list[str]:
+    proposals_root = root / "proposals"
+    if not proposals_root.is_dir():
+        return []
+    proposal_ids: list[str] = []
+    for proposal_root in sorted(path for path in proposals_root.iterdir() if path.is_dir()):
+        metadata_path = proposal_root / "metadata.yml"
+        if not metadata_path.is_file():
+            continue
+        try:
+            metadata = json.loads(metadata_path.read_text(encoding="utf-8"))
+        except json.JSONDecodeError:
+            continue
+        if not isinstance(metadata, dict):
+            continue
+        if metadata.get("repo_id") == repo_id and metadata.get("status") == "applied":
+            proposal_id = metadata.get("id")
+            proposal_ids.append(proposal_id if isinstance(proposal_id, str) else proposal_root.name)
+    return proposal_ids
 
 
 def _copy_org_context(root: Path, cache_root: Path) -> None:

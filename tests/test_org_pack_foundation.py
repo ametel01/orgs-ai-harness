@@ -3150,6 +3150,103 @@ class RepoOnboardingTests(unittest.TestCase):
             for path, before in protected_before.items():
                 self.assertEqual((root / path).read_bytes(), before, path)
 
+    def test_cache_export_ignores_open_and_rejected_proposals(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            tmp_path = Path(tmp)
+            repo_path = create_basic_fixture_repo(tmp_path)
+            init_org_pack(tmp_path, "acme")
+            self.assertEqual(self.run_cli(tmp_path, "repo", "add", "fixture-repo").returncode, 0)
+            self.assertEqual(self.run_cli(tmp_path, "onboard", "fixture-repo").returncode, 0)
+            self.assertEqual(self.run_cli(tmp_path, "approve", "fixture-repo", "--all").returncode, 0)
+            root = tmp_path / DEFAULT_PACK_DIR
+            self.assertEqual(self.run_cli(tmp_path, "cache", "refresh", "fixture-repo").returncode, 0)
+            self.assertEqual(self.run_cli(tmp_path, "export", "generic", "fixture-repo").returncode, 0)
+            export_skill = repo_path / ".agent-harness" / "cache" / "exports" / "generic" / "skills" / "build-test-debug" / "SKILL.md"
+            exported_before = export_skill.read_bytes()
+            trace_path = root / "trace-summaries" / "eval-events.jsonl"
+            trace_path.write_text(
+                json.dumps(
+                    {
+                        "schema_version": 1,
+                        "event_id": "evt_eval_fixture_0001",
+                        "event_type": "scoring",
+                        "timestamp": "2026-04-28T00:00:00+00:00",
+                        "repo_id": "fixture-repo",
+                        "pack_ref": "repos/fixture-repo/approval.yml",
+                        "actor": "adapter",
+                        "adapter": "fixture",
+                        "payload": {"task_id": "command-selection-tests", "passed": False},
+                    }
+                )
+                + "\n",
+                encoding="utf-8",
+            )
+            self.assertEqual(self.run_cli(tmp_path, "improve", "fixture-repo").returncode, 0)
+
+            open_export = self.run_cli(tmp_path, "export", "generic", "fixture-repo")
+            reject_result = self.run_cli(
+                tmp_path,
+                "proposals",
+                "reject",
+                "prop_001",
+                "--reason",
+                "Not enough evidence",
+            )
+            rejected_export = self.run_cli(tmp_path, "export", "generic", "fixture-repo")
+
+            self.assertEqual(open_export.returncode, 0, open_export.stderr)
+            self.assertEqual(reject_result.returncode, 0, reject_result.stderr)
+            self.assertEqual(rejected_export.returncode, 0, rejected_export.stderr)
+            self.assertEqual(export_skill.read_bytes(), exported_before)
+
+    def test_applied_proposal_requires_cache_refresh_before_export_updates(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            tmp_path = Path(tmp)
+            repo_path = create_basic_fixture_repo(tmp_path)
+            init_org_pack(tmp_path, "acme")
+            self.assertEqual(self.run_cli(tmp_path, "repo", "add", "fixture-repo").returncode, 0)
+            self.assertEqual(self.run_cli(tmp_path, "onboard", "fixture-repo").returncode, 0)
+            self.assertEqual(self.run_cli(tmp_path, "approve", "fixture-repo", "--all").returncode, 0)
+            root = tmp_path / DEFAULT_PACK_DIR
+            self.assertEqual(self.run_cli(tmp_path, "cache", "refresh", "fixture-repo").returncode, 0)
+            before_pack_ref = (repo_path / ".agent-harness" / "cache" / "pack-ref").read_text(encoding="utf-8").strip()
+            trace_path = root / "trace-summaries" / "eval-events.jsonl"
+            trace_path.write_text(
+                json.dumps(
+                    {
+                        "schema_version": 1,
+                        "event_id": "evt_eval_fixture_0001",
+                        "event_type": "scoring",
+                        "timestamp": "2026-04-28T00:00:00+00:00",
+                        "repo_id": "fixture-repo",
+                        "pack_ref": "repos/fixture-repo/approval.yml",
+                        "actor": "adapter",
+                        "adapter": "fixture",
+                        "payload": {"task_id": "command-selection-tests", "passed": False},
+                    }
+                )
+                + "\n",
+                encoding="utf-8",
+            )
+            self.assertEqual(self.run_cli(tmp_path, "improve", "fixture-repo").returncode, 0)
+            self.assertEqual(self.run_cli(tmp_path, "proposals", "apply", "prop_001", "--yes").returncode, 0)
+
+            stale_export = self.run_cli(tmp_path, "export", "generic", "fixture-repo")
+            refresh_result = self.run_cli(tmp_path, "cache", "refresh", "fixture-repo")
+            updated_export = self.run_cli(tmp_path, "export", "generic", "fixture-repo")
+
+            self.assertNotEqual(stale_export.returncode, 0)
+            self.assertIn("cache is stale", stale_export.stderr)
+            self.assertEqual(refresh_result.returncode, 0, refresh_result.stderr)
+            self.assertEqual(updated_export.returncode, 0, updated_export.stderr)
+            cache_root = repo_path / ".agent-harness" / "cache"
+            after_pack_ref = (cache_root / "pack-ref").read_text(encoding="utf-8").strip()
+            self.assertNotEqual(after_pack_ref, before_pack_ref)
+            metadata = json.loads((cache_root / "metadata.json").read_text(encoding="utf-8"))
+            self.assertEqual(metadata["applied_proposals"], ["prop_001"])
+            exported_skill = cache_root / "exports" / "generic" / "skills" / "build-test-debug" / "SKILL.md"
+            self.assertIn("Proposal note: review recent trace evidence", exported_skill.read_text(encoding="utf-8"))
+
     def test_cli_onboard_rejects_unknown_repo_without_artifact_mutation(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
             tmp_path = Path(tmp)
