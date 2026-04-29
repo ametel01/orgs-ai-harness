@@ -15,8 +15,10 @@ from orgs_ai_harness.runtime_adapter import (
     RuntimeAdapter,
     RuntimeAdapterError,
     RuntimeAdapterInput,
+    RuntimeAdapterObservation,
     ToolCallDecision,
     adapter_decision_from_json,
+    assemble_runtime_prompt,
     build_adapter_skill_catalog,
     build_adapter_tool_catalog,
 )
@@ -66,6 +68,71 @@ class RuntimeAdapterContractTests(unittest.TestCase):
 
         with self.assertRaises(RuntimeAdapterError):
             FixtureRuntimeAdapter([])
+
+    def test_prompt_assembly_is_deterministic_and_includes_runtime_contract(self) -> None:
+        adapter_input = RuntimeAdapterInput(
+            goal="inspect repo",
+            context=[{"name": "workspace", "payload": {"cwd": "/tmp/work"}}],
+            tools=(
+                {
+                    "tool_id": "local.cwd",
+                    "description": "Return cwd.",
+                    "input_schema": {"type": "object"},
+                    "required_permission": "read-only",
+                },
+            ),
+            skill_catalog={"skills": [{"path": "org-agent-skills/org/skills/a/SKILL.md", "content": "body"}]},
+            observations=(
+                RuntimeAdapterObservation(
+                    adapter_decision_event_id="s:0001",
+                    tool_call_event_id="s:0002",
+                    tool_id="local.cwd",
+                    result={"ok": True, "tool_id": "local.cwd", "message": "cwd inspected"},
+                ),
+            ),
+            permission_mode="read-only",
+        )
+
+        first_prompt = assemble_runtime_prompt(adapter_input)
+        second_prompt = assemble_runtime_prompt(adapter_input)
+
+        self.assertEqual(first_prompt, second_prompt)
+        self.assertIn("Return exactly one JSON object", first_prompt)
+        self.assertIn("inspect repo", first_prompt)
+        self.assertIn('"tool_id":"local.cwd"', first_prompt)
+        self.assertIn('"required_permission":"read-only"', first_prompt)
+        self.assertIn('"path":"org-agent-skills/org/skills/a/SKILL.md"', first_prompt)
+        self.assertIn('"adapter_decision_event_id":"s:0001"', first_prompt)
+        self.assertLess(first_prompt.index("## tool_catalog"), first_prompt.index("## skill_catalog"))
+
+    def test_prompt_assembly_bounds_large_sections_with_explicit_markers(self) -> None:
+        adapter_input = RuntimeAdapterInput(
+            goal="inspect repo",
+            context=[{"name": "large", "payload": {"content": "x" * 200}}],
+            tools=(),
+            skill_catalog={"skills": [{"path": "skill.md", "content": "y" * 200}], "resolvers": []},
+            observations=(
+                RuntimeAdapterObservation(
+                    adapter_decision_event_id="s:0001",
+                    tool_call_event_id="s:0002",
+                    tool_id="local.search_text",
+                    result={"stdout": "z" * 200},
+                ),
+            ),
+        )
+
+        prompt = assemble_runtime_prompt(
+            adapter_input,
+            context_budget_chars=60,
+            skill_budget_chars=60,
+            observation_budget_chars=60,
+        )
+
+        self.assertEqual(prompt.count("[section truncated:"), 3)
+        prior_observations = prompt.split("## prior_observations\n", maxsplit=1)[1]
+        self.assertLess(
+            prior_observations.index('"adapter_decision_event_id"'), prior_observations.index("[section truncated:")
+        )
 
 
 class RuntimeEventStoreTests(unittest.TestCase):

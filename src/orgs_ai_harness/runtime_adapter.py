@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import json
 import math
 from dataclasses import dataclass, field
 from typing import Protocol, TypeAlias, cast
@@ -92,6 +93,47 @@ class RuntimeAdapter(Protocol):
     def decide(self, adapter_input: RuntimeAdapterInput) -> AdapterDecision:
         """Return the next runtime decision."""
         ...
+
+
+def assemble_runtime_prompt(
+    adapter_input: RuntimeAdapterInput,
+    *,
+    context_budget_chars: int = 8000,
+    skill_budget_chars: int = 4000,
+    observation_budget_chars: int = 6000,
+) -> str:
+    """Build a deterministic provider-neutral prompt for a read-only adapter."""
+
+    sections = [
+        (
+            "instructions",
+            "You are choosing the next decision for a read-only runtime session.\n"
+            "Return exactly one JSON object with either type=tool_call or type=final_response.\n"
+            "For tool_call, include tool_id and tool_input. For final_response, include summary.\n"
+            "Do not request tools outside the supplied catalog or outside the active permission mode.",
+        ),
+        ("goal", adapter_input.goal),
+        ("permission_mode", adapter_input.permission_mode),
+        ("runtime_context", _render_bounded_json(adapter_input.context, context_budget_chars)),
+        ("tool_catalog", _render_bounded_json(list(adapter_input.tools), context_budget_chars)),
+        ("skill_catalog", _render_bounded_json(adapter_input.skill_catalog, skill_budget_chars)),
+        (
+            "prior_observations",
+            _render_bounded_json(
+                [observation.to_json() for observation in adapter_input.observations],
+                observation_budget_chars,
+            ),
+        ),
+    ]
+    return "\n\n".join(f"## {name}\n{body}" for name, body in sections)
+
+
+def _render_bounded_json(value: object, budget_chars: int) -> str:
+    rendered = json.dumps(value, sort_keys=True, separators=(",", ":"), ensure_ascii=False)
+    if len(rendered) <= budget_chars:
+        return rendered
+    omitted = len(rendered) - budget_chars
+    return rendered[: max(0, budget_chars)] + f"\n[section truncated: {omitted} chars omitted]"
 
 
 @dataclass
