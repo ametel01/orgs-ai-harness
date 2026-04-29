@@ -20,6 +20,7 @@ from orgs_ai_harness.org_pack import (
     init_org_pack,
     resolve_default_root,
 )
+from orgs_ai_harness.pr_review import ReviewError, collect_changed_files
 from orgs_ai_harness.proposals import (
     ProposalError,
     apply_proposal,
@@ -189,6 +190,19 @@ def build_parser() -> argparse.ArgumentParser:
         help="Allow draft/non-approved eval replay without producing verified status",
     )
 
+    review_parser = subparsers.add_parser("review", help="Create artifact-only PR/change review inputs")
+    review_subparsers = review_parser.add_subparsers(dest="review_command", required=True)
+    review_changed = review_subparsers.add_parser("changed-files", help="Resolve changed files for one registered repo")
+    review_changed.add_argument("--repo-id", required=True, help="Registered repo id to review")
+    review_changed.add_argument("--base", help="Base git ref for local diff input")
+    review_changed.add_argument("--head", help="Head git ref for local diff input")
+    review_changed.add_argument(
+        "--files",
+        nargs="+",
+        help="Explicit repo-relative changed files for deterministic non-interactive review",
+    )
+    review_changed.add_argument("--files-from", help="Path to a newline-delimited changed-file list")
+
     cache_parser = subparsers.add_parser("cache", help="Manage repo-local pinned caches")
     cache_subparsers = cache_parser.add_subparsers(dest="cache_command", required=True)
     cache_refresh = cache_subparsers.add_parser("refresh", help="Refresh a repo-local approved pack cache")
@@ -248,6 +262,7 @@ def main(argv: list[str] | None = None) -> int:
         CacheManagerError,
         ExplainError,
         ProposalError,
+        ReviewError,
         RuntimeEventError,
         RuntimeToolError,
     ) as exc:
@@ -271,6 +286,7 @@ def _handler_for_command(command: str):
         "improve": _handle_improve_command,
         "refresh": _handle_refresh_command,
         "proposals": _handle_proposals_command,
+        "review": _handle_review_command,
         "repo": _handle_repo_command,
     }
     return handlers.get(command)
@@ -507,6 +523,24 @@ def _handle_proposals_command(args: argparse.Namespace) -> int:
         print(f"Rejected proposal {result.proposal_id} for {result.repo_id}; status={result.status}")
         return 0
     return 2
+
+
+def _handle_review_command(args: argparse.Namespace) -> int:
+    if args.review_command != "changed-files":
+        return 2
+    root = _resolve_existing_org_pack_root(Path.cwd())
+    result = collect_changed_files(
+        root,
+        args.repo_id,
+        files=tuple(args.files or ()),
+        files_from=Path(args.files_from) if args.files_from else None,
+        base=args.base,
+        head=args.head,
+    )
+    print(f"Review changed files for repo {result.repo_id}; source={result.source}; count={len(result.changed_files)}")
+    for changed_file in result.changed_files:
+        print(changed_file)
+    return 0
 
 
 def _handle_repo_command(args: argparse.Namespace) -> int:
