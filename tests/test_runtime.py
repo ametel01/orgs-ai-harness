@@ -417,6 +417,25 @@ class RuntimeContextAndLoopTests(unittest.TestCase):
         env["PYTHONPATH"] = str(Path.cwd() / "src")
         return env
 
+    def codex_local_adapter(
+        self,
+        outputs: list[str],
+        *,
+        prompts: list[str] | None = None,
+    ) -> CodexLocalRuntimeAdapter:
+        scripted = list(outputs)
+
+        def fake_runner(argv: list[str], **kwargs: object) -> subprocess.CompletedProcess[str]:
+            if prompts is not None:
+                prompts.append(cast(str, kwargs["input"]))
+            if not scripted:
+                return subprocess.CompletedProcess(
+                    argv, 0, stdout='{"type":"final_response","summary":"done"}', stderr=""
+                )
+            return subprocess.CompletedProcess(argv, 0, stdout=scripted.pop(0), stderr="")
+
+        return CodexLocalRuntimeAdapter(command_argv=("fake-codex",), runner=fake_runner)
+
     def test_context_assembly_discovers_instructions_cache_and_bounded_skills(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
             workspace = Path(tmp)
@@ -538,6 +557,61 @@ class RuntimeContextAndLoopTests(unittest.TestCase):
             self.assertFalse(unknown.ok)
             self.assertIn("unknown runtime tool", unknown.summary)
             self.assertTrue(any(event.event_type == "error" for event in store.read_session("exploded").events))
+
+    def test_codex_local_path_preserves_read_only_safety_boundaries(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            workspace = Path(tmp)
+            prompts: list[str] = []
+            denied_write = run_read_only_session(
+                workspace,
+                "try write",
+                adapter=self.codex_local_adapter(
+                    ['{"type":"tool_call","tool_id":"local.write_file","tool_input":{"path":"x.txt","content":"x"}}'],
+                    prompts=prompts,
+                ),
+                session_id="denied-write",
+            )
+            risky_shell = run_read_only_session(
+                workspace,
+                "try risky shell",
+                adapter=self.codex_local_adapter(
+                    ['{"type":"tool_call","tool_id":"local.shell","tool_input":{"argv":["rm","-rf","x"]}}']
+                ),
+                session_id="risky-shell",
+            )
+            unknown_tool = run_read_only_session(
+                workspace,
+                "try unknown",
+                adapter=self.codex_local_adapter(['{"type":"tool_call","tool_id":"missing.tool","tool_input":{}}']),
+                session_id="unknown-tool",
+            )
+            maxed = run_read_only_session(
+                workspace,
+                "loop",
+                adapter=self.codex_local_adapter(
+                    [
+                        '{"type":"tool_call","tool_id":"local.cwd","tool_input":{}}',
+                        '{"type":"tool_call","tool_id":"local.cwd","tool_input":{}}',
+                    ]
+                ),
+                max_steps=2,
+                session_id="maxed-codex",
+            )
+            store = RuntimeSessionStore(workspace / ".agent-harness" / "sessions")
+
+            self.assertFalse(denied_write.ok)
+            self.assertIn("workspace-write", denied_write.summary)
+            self.assertFalse((workspace / "x.txt").exists())
+            self.assertIn("## permission_mode\nread-only", prompts[0])
+            self.assertFalse(risky_shell.ok)
+            self.assertIn("high-risk", risky_shell.summary)
+            self.assertFalse(unknown_tool.ok)
+            self.assertIn("unknown runtime tool", unknown_tool.summary)
+            self.assertFalse(maxed.ok)
+            self.assertIn("max_steps=2", maxed.summary)
+            unknown_events = store.read_session("unknown-tool").events
+            self.assertEqual(unknown_events[-2].event_type, "error")
+            self.assertEqual(unknown_events[-1].event_type, "final_response")
 
     def test_cli_run_creates_session_log_and_resume_reports_recovery_state(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
