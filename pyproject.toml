@@ -45,7 +45,9 @@ typeCheckingMode = "basic"
 testpaths = ["tests"]
 
 [tool.coverage.run]
+patch = ["subprocess"]
 source = ["orgs_ai_harness"]
 
 [tool.coverage.report]
+fail_under = 81
 show_missing = true
