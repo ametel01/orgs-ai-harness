@@ -10,6 +10,7 @@ from typing import cast
 
 from orgs_ai_harness.artifact_schemas import JsonValue
 from orgs_ai_harness.runtime_adapter import (
+    CodexLocalRuntimeAdapter,
     FinalResponseDecision,
     FixtureRuntimeAdapter,
     RuntimeAdapter,
@@ -82,6 +83,63 @@ class RuntimeAdapterContractTests(unittest.TestCase):
                 with self.assertRaises(RuntimeAdapterError) as raised:
                     parse_adapter_decision_output(output)
                 self.assertTrue(str(raised.exception))
+
+    def test_codex_local_adapter_sends_prompt_to_subprocess_and_parses_stdout(self) -> None:
+        calls: list[dict[str, object]] = []
+
+        def fake_runner(argv: list[str], **kwargs: object) -> subprocess.CompletedProcess[str]:
+            calls.append({"argv": argv, **kwargs})
+            return subprocess.CompletedProcess(
+                argv,
+                0,
+                stdout='{"type":"tool_call","tool_id":"local.cwd","tool_input":{}}',
+                stderr="",
+            )
+
+        adapter = CodexLocalRuntimeAdapter(command_argv=("fake-codex", "run"), runner=fake_runner)
+        decision = adapter.decide(RuntimeAdapterInput(goal="inspect", context=[], tools=(), skill_catalog={}))
+
+        self.assertEqual(decision, ToolCallDecision("local.cwd", {}))
+        self.assertEqual(calls[0]["argv"], ["fake-codex", "run"])
+        self.assertIn("inspect", cast(str, calls[0]["input"]))
+        self.assertEqual(calls[0]["timeout"], 30.0)
+        self.assertFalse(calls[0]["check"])
+
+    def test_codex_local_adapter_reports_subprocess_failures_clearly(self) -> None:
+        def missing(argv: list[str], **kwargs: object) -> subprocess.CompletedProcess[str]:
+            raise FileNotFoundError(argv[0])
+
+        def timeout(argv: list[str], **kwargs: object) -> subprocess.CompletedProcess[str]:
+            raise subprocess.TimeoutExpired(argv, 0.1)
+
+        def nonzero(argv: list[str], **kwargs: object) -> subprocess.CompletedProcess[str]:
+            return subprocess.CompletedProcess(argv, 2, stdout="", stderr="model failed")
+
+        def stderr(argv: list[str], **kwargs: object) -> subprocess.CompletedProcess[str]:
+            return subprocess.CompletedProcess(
+                argv,
+                0,
+                stdout='{"type":"final_response","summary":"done"}',
+                stderr="diagnostic",
+            )
+
+        def malformed(argv: list[str], **kwargs: object) -> subprocess.CompletedProcess[str]:
+            return subprocess.CompletedProcess(argv, 0, stdout="not json", stderr="")
+
+        cases = {
+            "missing": (missing, "executable not found"),
+            "timeout": (timeout, "timed out"),
+            "nonzero": (nonzero, "exited with code 2"),
+            "stderr": (stderr, "wrote stderr"),
+            "malformed": (malformed, "valid JSON"),
+        }
+
+        for name, (runner, expected) in cases.items():
+            with self.subTest(name=name):
+                adapter = CodexLocalRuntimeAdapter(command_argv=("fake-codex",), timeout_seconds=0.1, runner=runner)
+                with self.assertRaises(RuntimeAdapterError) as raised:
+                    adapter.decide(RuntimeAdapterInput(goal="inspect", context=[], tools=(), skill_catalog={}))
+                self.assertIn(expected, str(raised.exception))
 
     def test_fixture_adapter_returns_decisions_in_order_and_records_observations(self) -> None:
         adapter = FixtureRuntimeAdapter([ToolCallDecision("local.cwd", {}), FinalResponseDecision("done")])

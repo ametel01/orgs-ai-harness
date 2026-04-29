@@ -50,7 +50,7 @@ from orgs_ai_harness.repo_registry import (
     remove_repo,
     set_repo_path,
 )
-from orgs_ai_harness.runtime_adapter import RuntimeAdapter
+from orgs_ai_harness.runtime_adapter import CodexLocalRuntimeAdapter, RuntimeAdapter
 from orgs_ai_harness.runtime_events import RuntimeEventError
 from orgs_ai_harness.runtime_runner import resume_read_only_session, run_read_only_session
 from orgs_ai_harness.runtime_tools import RuntimeToolError
@@ -85,7 +85,9 @@ def build_parser() -> argparse.ArgumentParser:
     run_parser.add_argument("--session-root", help="Directory containing runtime session JSONL logs")
     run_parser.add_argument("--session-id", help="Explicit session id for deterministic tests or resume")
     run_parser.add_argument("--resume", action="store_true", help="Resume/inspect an existing read-only session")
-    run_parser.add_argument("--adapter", default="fixture", help="Runtime adapter for new sessions: fixture")
+    run_parser.add_argument(
+        "--adapter", default="fixture", help="Runtime adapter for new sessions: fixture or codex-local"
+    )
 
     org_parser = subparsers.add_parser("org", help="Manage org skill packs")
     org_subparsers = org_parser.add_subparsers(dest="org_command", required=True)
@@ -293,7 +295,9 @@ def _handle_run_command(args: argparse.Namespace) -> int:
 def _runtime_adapter_for_name(adapter_name: str) -> RuntimeAdapter | None:
     if adapter_name == "fixture":
         return None
-    raise RuntimeEventError(f"unsupported runtime adapter: {adapter_name}; supported adapters: fixture")
+    if adapter_name == "codex-local":
+        return CodexLocalRuntimeAdapter.from_environment()
+    raise RuntimeEventError(f"unsupported runtime adapter: {adapter_name}; supported adapters: fixture, codex-local")
 
 
 def _handle_org_command(args: argparse.Namespace) -> int:

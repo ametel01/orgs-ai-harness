@@ -4,6 +4,10 @@ from __future__ import annotations
 
 import json
 import math
+import os
+import shlex
+import subprocess  # nosec B404
+from collections.abc import Callable
 from dataclasses import dataclass, field
 from typing import Protocol, TypeAlias, cast
 
@@ -13,6 +17,9 @@ from orgs_ai_harness.runtime_tools import ToolRegistry
 
 JsonObject: TypeAlias = dict[str, JsonValue]
 AdapterDecision: TypeAlias = "ToolCallDecision | FinalResponseDecision"
+SubprocessRunner: TypeAlias = Callable[..., subprocess.CompletedProcess[str]]
+DEFAULT_CODEX_LOCAL_COMMAND = ("codex-local",)
+DEFAULT_CODEX_LOCAL_TIMEOUT_SECONDS = 30.0
 
 
 class RuntimeAdapterError(Exception):
@@ -165,6 +172,57 @@ class FixtureRuntimeAdapter:
         return decision
 
 
+@dataclass(frozen=True)
+class CodexLocalRuntimeAdapter:
+    command_argv: tuple[str, ...] = DEFAULT_CODEX_LOCAL_COMMAND
+    timeout_seconds: float = DEFAULT_CODEX_LOCAL_TIMEOUT_SECONDS
+    runner: SubprocessRunner = subprocess.run
+
+    def __post_init__(self) -> None:
+        if not self.command_argv or not all(isinstance(part, str) and part for part in self.command_argv):
+            raise RuntimeAdapterError("codex-local adapter command must be a non-empty argv tuple")
+        if self.timeout_seconds <= 0:
+            raise RuntimeAdapterError("codex-local adapter timeout must be greater than zero")
+
+    @classmethod
+    def from_environment(cls) -> CodexLocalRuntimeAdapter:
+        raw_command = os.environ.get("ORGS_AI_HARNESS_CODEX_LOCAL_COMMAND", "").strip()
+        command = tuple(shlex.split(raw_command)) if raw_command else DEFAULT_CODEX_LOCAL_COMMAND
+        raw_timeout = os.environ.get("ORGS_AI_HARNESS_CODEX_LOCAL_TIMEOUT", "").strip()
+        timeout = DEFAULT_CODEX_LOCAL_TIMEOUT_SECONDS
+        if raw_timeout:
+            try:
+                timeout = float(raw_timeout)
+            except ValueError as exc:
+                raise RuntimeAdapterError("ORGS_AI_HARNESS_CODEX_LOCAL_TIMEOUT must be a number") from exc
+        return cls(command_argv=command, timeout_seconds=timeout)
+
+    def decide(self, adapter_input: RuntimeAdapterInput) -> AdapterDecision:
+        prompt = assemble_runtime_prompt(adapter_input)
+        try:
+            result = self.runner(  # nosec B603
+                list(self.command_argv),
+                input=prompt,
+                text=True,
+                capture_output=True,
+                check=False,
+                timeout=self.timeout_seconds,
+            )
+        except FileNotFoundError as exc:
+            raise RuntimeAdapterError(f"codex-local adapter executable not found: {self.command_argv[0]}") from exc
+        except subprocess.TimeoutExpired as exc:
+            raise RuntimeAdapterError(f"codex-local adapter timed out after {self.timeout_seconds:g}s") from exc
+        if result.returncode != 0:
+            detail = _bounded_diagnostic(result.stderr or result.stdout)
+            message = f"codex-local adapter exited with code {result.returncode}"
+            if detail:
+                message += f": {detail}"
+            raise RuntimeAdapterError(message)
+        if result.stderr.strip():
+            raise RuntimeAdapterError(f"codex-local adapter wrote stderr: {_bounded_diagnostic(result.stderr)}")
+        return parse_adapter_decision_output(result.stdout)
+
+
 def coerce_adapter_decision(raw: AdapterDecision | JsonObject) -> AdapterDecision:
     if isinstance(raw, ToolCallDecision | FinalResponseDecision):
         return raw
@@ -218,6 +276,13 @@ def adapter_decision_from_json(raw: object) -> AdapterDecision:
 
 def _reject_non_json_constant(constant: str) -> object:
     raise RuntimeAdapterError(f"adapter output contains non-JSON-safe value: {constant}")
+
+
+def _bounded_diagnostic(text: str, limit: int = 800) -> str:
+    stripped = text.strip()
+    if len(stripped) <= limit:
+        return stripped
+    return stripped[:limit] + "\n[diagnostic truncated]"
 
 
 def build_adapter_tool_catalog(registry: ToolRegistry) -> tuple[JsonObject, ...]:
