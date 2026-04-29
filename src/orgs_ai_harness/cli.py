@@ -50,6 +50,7 @@ from orgs_ai_harness.repo_registry import (
     remove_repo,
     set_repo_path,
 )
+from orgs_ai_harness.runtime_adapter import RuntimeAdapter
 from orgs_ai_harness.runtime_events import RuntimeEventError
 from orgs_ai_harness.runtime_runner import resume_read_only_session, run_read_only_session
 from orgs_ai_harness.runtime_tools import RuntimeToolError
@@ -84,6 +85,7 @@ def build_parser() -> argparse.ArgumentParser:
     run_parser.add_argument("--session-root", help="Directory containing runtime session JSONL logs")
     run_parser.add_argument("--session-id", help="Explicit session id for deterministic tests or resume")
     run_parser.add_argument("--resume", action="store_true", help="Resume/inspect an existing read-only session")
+    run_parser.add_argument("--adapter", default="fixture", help="Runtime adapter for new sessions: fixture")
 
     org_parser = subparsers.add_parser("org", help="Manage org skill packs")
     org_subparsers = org_parser.add_subparsers(dest="org_command", required=True)
@@ -274,11 +276,24 @@ def _handle_run_command(args: argparse.Namespace) -> int:
         return 0
     if not args.goal:
         raise RuntimeEventError("harness run requires a goal unless --resume is used")
-    result = run_read_only_session(Path.cwd(), args.goal, session_root=session_root, session_id=args.session_id)
+    adapter = _runtime_adapter_for_name(args.adapter)
+    result = run_read_only_session(
+        Path.cwd(),
+        args.goal,
+        adapter=adapter,
+        session_root=session_root,
+        session_id=args.session_id,
+    )
     print(result.summary)
     print(f"Session: {result.session_id}")
     print(f"Log: {result.session_path}")
     return 0
+
+
+def _runtime_adapter_for_name(adapter_name: str) -> RuntimeAdapter | None:
+    if adapter_name == "fixture":
+        return None
+    raise RuntimeEventError(f"unsupported runtime adapter: {adapter_name}; supported adapters: fixture")
 
 
 def _handle_org_command(args: argparse.Namespace) -> int:

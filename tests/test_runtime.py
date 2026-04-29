@@ -482,12 +482,53 @@ class RuntimeContextAndLoopTests(unittest.TestCase):
                 capture_output=True,
                 check=False,
             )
+            explicit_fixture_result = subprocess.run(
+                [
+                    sys.executable,
+                    "-m",
+                    "orgs_ai_harness",
+                    "run",
+                    "summarize this repo state",
+                    "--adapter",
+                    "fixture",
+                    "--session-id",
+                    "session-b",
+                ],
+                cwd=workspace,
+                env=self.cli_env(),
+                text=True,
+                capture_output=True,
+                check=False,
+            )
+            invalid_adapter_result = subprocess.run(
+                [
+                    sys.executable,
+                    "-m",
+                    "orgs_ai_harness",
+                    "run",
+                    "summarize this repo state",
+                    "--adapter",
+                    "missing",
+                    "--session-id",
+                    "session-c",
+                ],
+                cwd=workspace,
+                env=self.cli_env(),
+                text=True,
+                capture_output=True,
+                check=False,
+            )
 
             self.assertEqual(run_result.returncode, 0, run_result.stderr)
             self.assertIn("Session: session-a", run_result.stdout)
             self.assertTrue((workspace / ".agent-harness" / "sessions" / "session-a.jsonl").is_file())
             self.assertEqual(resume_result.returncode, 0, resume_result.stderr)
             self.assertIn("Resumed session session-a", resume_result.stdout)
+            self.assertEqual(explicit_fixture_result.returncode, 0, explicit_fixture_result.stderr)
+            self.assertIn("Session: session-b", explicit_fixture_result.stdout)
+            self.assertNotEqual(invalid_adapter_result.returncode, 0)
+            self.assertIn("unsupported runtime adapter: missing", invalid_adapter_result.stderr)
+            self.assertFalse((workspace / ".agent-harness" / "sessions" / "session-c.jsonl").exists())
 
 
 class RuntimeHookTests(unittest.TestCase):
