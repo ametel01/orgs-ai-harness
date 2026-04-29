@@ -1,4 +1,4 @@
-.PHONY: sync format lint typecheck test coverage verify security build
+.PHONY: sync format lint typecheck test coverage verify security pre-commit build
 
 sync:
 	uv sync --frozen
@@ -23,7 +23,10 @@ verify: lint typecheck test
 
 security:
 	uv run pip-audit
-	uv run detect-secrets scan --baseline .secrets.baseline
+	uv run detect-secrets-hook --baseline .secrets.baseline $$(git ls-files)
+
+pre-commit:
+	uv run pre-commit run --all-files
 
 build:
 	uv build
