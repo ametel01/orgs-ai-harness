@@ -71,7 +71,7 @@
     },
     {
       "path": "repos/orgs-ai-harness/llm-output/claude/skills/harness-validation-tests/SKILL.md",
-      "sha256": "7f61260dacab73285bd99572abbd48d4791fff6ba01c69bb453a143914bce9e8",
+      "sha256": "4330dccef39977da7f7b2bf88a1192f310ed115b1c7231419ba40804bee2c28e",
       "protected": true
     },
     {
@@ -106,7 +106,7 @@
     },
     {
       "path": "repos/orgs-ai-harness/llm-output/codex/skills/harness-validation-tests/SKILL.md",
-      "sha256": "7f61260dacab73285bd99572abbd48d4791fff6ba01c69bb453a143914bce9e8",
+      "sha256": "4330dccef39977da7f7b2bf88a1192f310ed115b1c7231419ba40804bee2c28e",
       "protected": true
     },
     {
@@ -186,7 +186,7 @@
     },
     {
       "path": "repos/orgs-ai-harness/skills/harness-validation-tests/SKILL.md",
-      "sha256": "7f61260dacab73285bd99572abbd48d4791fff6ba01c69bb453a143914bce9e8",
+      "sha256": "4330dccef39977da7f7b2bf88a1192f310ed115b1c7231419ba40804bee2c28e",
       "protected": true
     },
     {

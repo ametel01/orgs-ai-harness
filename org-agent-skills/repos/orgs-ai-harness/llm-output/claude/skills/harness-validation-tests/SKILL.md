@@ -55,7 +55,7 @@ PYTHONPATH="$PWD/src" python3 -m unittest tests.test_org_pack_foundation.RepoOnb
 - `validate_org_pack` checks the minimum org pack skeleton and `harness.yml`.
 - `validate_repo_onboarding` accepts scan-only artifacts and adds generated-pack checks only when generated markers exist.
 - Generated skill names must be lowercase kebab-case and match frontmatter `name`.
-- Broken `references/...` links in `SKILL.md` must fail validation.
+- Broken reference links in `SKILL.md` must fail validation.
 - Approved/verified repos require coherent `approval.yml` metadata.
 
 ## Common Pitfalls
