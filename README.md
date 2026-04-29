@@ -117,6 +117,22 @@ assembles bounded workspace context, enforces read-only tool permissions,
 dispatches local inspection tools, writes an append-only session JSONL log under
 `.agent-harness/sessions/`, and can inspect/resume an existing session log.
 
+## Runtime Progress
+
+Progress is tracked against the core runtime roadmap in
+[`org-skill-harness-advanced-paths.md`](local-docs/org-skill-harness-advanced-paths.md)
+and the skill format contract in
+[`AGENTS_SKILLS_SPEC.md`](local-docs/AGENTS_SKILLS_SPEC.md).
+
+| Area | Implemented | Deferred |
+| --- | --- | --- |
+| Skill lifecycle | Repo/org pack generation, validation, approval, eval replay, cache, export, proposal flow | CI eval replay, hosted dashboard, autonomous improvement |
+| Agent Skills contract | Generated `SKILL.md` frontmatter checks, directory-name matching, reference-link validation, bounded exported skill packs | Full external spec refresh automation and richer optional metadata policy |
+| Runtime loop | Deterministic `harness run <goal>` read-only session with context assembly, tool calls, observations, and final response event | LLM-driven planning, multi-step autonomous task execution, context compression |
+| Runtime persistence | Append-only session JSONL events and recovery inspection | Durable memory model, compaction checkpoints, write-session repair |
+| Runtime tools | Typed tool registry, structured results, read-only inspection tools, safe argv shell tool, workspace-write file tool internals | Broad shell/network/deployment tools, approval-backed risky dispatch |
+| Safety and hooks | Permission levels, command risk classification, pre-tool denial hooks, post-tool warnings, protected artifact write rejection | Interactive approval model, policy plugins, sub-agent permission scopes |
+
 Deeper workflow and boundary notes live in:
 
 - [User Guide](docs/user-guide.md)

@@ -106,6 +106,29 @@ Deferred runtime features remain model planning, context compression,
 sub-agent delegation, approval prompts, broad shell access, network/deployment
 tools, and write-session repair beyond inspection.
 
+## Implemented Vs Deferred
+
+This table tracks the production docs against the local roadmap in
+[`org-skill-harness-advanced-paths.md`](../local-docs/org-skill-harness-advanced-paths.md)
+and the pinned Agent Skills contract in
+[`AGENTS_SKILLS_SPEC.md`](../local-docs/AGENTS_SKILLS_SPEC.md). The local docs
+remain planning/reference material; this page records what the current code
+actually supports.
+
+| Capability area | Implemented now | Still deferred |
+| --- | --- | --- |
+| Core harness runtime | A deterministic read-only `harness run <goal>` path that starts a session, assembles context, dispatches inspection tools, observes results, and records a final response | LLM-owned act/observe/adjust planning, autonomous code changes, context compression, and sub-agent delegation |
+| Session persistence | Append-only JSONL event logs with stable session ids, event ids, timestamps, event types, cwd/workspace metadata, and JSON-safe payloads | Long-term memory, compaction checkpoints, cross-session retrieval, and write-session repair beyond inspection |
+| Recovery | Session replay can summarize malformed records, latest recovery markers, latest errors, pending tool calls, and final responses; `harness run --resume --session-id <id>` inspects read-only sessions | Resuming model state, replaying unfinished tool outputs, and completing interrupted write sessions |
+| Context assembly | Workspace, OS/date, git status, recent commits, project instructions, harness/cache state, and bounded skill/resolver summaries are returned as structured sections | Token-budget optimization, semantic retrieval, automatic summarization, and dropped-context audit trails |
+| Tool registry | Runtime tools have stable ids, descriptions, input schema metadata, required permissions, callable dispatch, and structured result contracts | External tool adapters, hosted/provider tools, tool streaming, and rich schema validation beyond local metadata |
+| Permission model | `read-only`, `workspace-write`, `full-access`, and `high-risk` levels exist; dispatch denies tools above the active permission; command risk is classified before shell execution | Human approval prompts, persisted approval grants, sub-agent scopes, and configurable organization policy plugins |
+| Shell execution | `local.shell` uses argv-safe subprocess execution, bounded output, exit-code capture, timeout, and conservative allow/deny classification | Network, deployment, destructive, and unknown command classes without a future approval path |
+| File writes | `local.write_file` is available behind `workspace-write`, checks workspace boundaries, rejects protected generated pack paths, and reports changed files | Patch application, multi-file transactions, rollback plans, and recovery that completes interrupted edits |
+| Lifecycle hooks | Pre-tool hooks can deny dispatch; post-tool hooks can attach warning/audit metadata; pre-hook failures fail closed | Hook plugin discovery, external audit sinks, redaction hooks, and workflow-specific hook packs |
+| Agent Skills format | Generated skills are validated for frontmatter, directory-name agreement, description length, and valid `references/` links; packs can be exported for runtime targets | Automated refresh from the live Agent Skills spec, optional metadata policy, and compatibility/allowed-tools enforcement |
+| Skill-pack lifecycle | Repo discovery, onboarding, generated skills, resolver metadata, approval hashes, eval replay, cache/export, proposals, and verified pack state are implemented | Batch onboarding, PR review workflows, CI eval replay, hosted dashboard, release readiness campaigns, and autonomous improvement |
+
 ## Org Pack Layout
 
 An org pack root contains:
