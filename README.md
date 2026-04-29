@@ -114,8 +114,10 @@ The current CLI implements the skill, validation, trace, cache, export, proposal
 and safety-policy foundation that this runtime will use. It also includes a
 first runtime vertical slice: `harness run <goal>` starts a read-only session,
 assembles bounded workspace context, enforces read-only tool permissions,
-dispatches local inspection tools, writes an append-only session JSONL log under
-`.agent-harness/sessions/`, and can inspect/resume an existing session log.
+asks a deterministic runtime adapter for tool-call or final-response decisions,
+writes adapter decisions, observations, tool results, and final responses to an
+append-only session JSONL log under `.agent-harness/sessions/`, and can
+inspect/resume an existing session log.
 
 ## Runtime Progress
 
@@ -128,8 +130,8 @@ and the skill format contract in
 | --- | --- | --- |
 | Skill lifecycle | Repo/org pack generation, validation, approval, eval replay, cache, export, proposal flow | CI eval replay, hosted dashboard, autonomous improvement |
 | Agent Skills contract | Generated `SKILL.md` frontmatter checks, directory-name matching, reference-link validation, bounded exported skill packs | Full external spec refresh automation and richer optional metadata policy |
-| Runtime loop | Deterministic `harness run <goal>` read-only session with context assembly, tool calls, observations, and final response event | LLM-driven planning, multi-step autonomous task execution, context compression |
-| Runtime persistence | Append-only session JSONL events and recovery inspection | Durable memory model, compaction checkpoints, write-session repair |
+| Runtime loop | Adapter-driven `harness run <goal>` read-only session with deterministic fixture/default adapter decisions, context assembly, tool calls, observations, max-step/error safeguards, and final response events | Real LLM adapter, multi-step autonomous task execution, context compression |
+| Runtime persistence | Append-only session JSONL events for adapter decisions, observations, tool calls/results, errors, final responses, and recovery inspection | Durable memory model, compaction checkpoints, write-session repair |
 | Runtime tools | Typed tool registry, structured results, read-only inspection tools, safe argv shell tool, workspace-write file tool internals | Broad shell/network/deployment tools, approval-backed risky dispatch |
 | Safety and hooks | Permission levels, command risk classification, pre-tool denial hooks, post-tool warnings, protected artifact write rejection | Interactive approval model, policy plugins, sub-agent permission scopes |
 

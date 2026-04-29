@@ -182,9 +182,11 @@ Run the current read-only runtime loop from a workspace:
 uv run harness run "summarize this repo state"
 ```
 
-The command starts a persisted session, assembles bounded context, runs local
-inspection tools under read-only permissions, and prints the session id and log
-path. Logs are written as JSONL under `.agent-harness/sessions/`.
+The command starts a persisted session, assembles bounded context, and asks the
+current deterministic runtime adapter for read-only tool-call and final-response
+decisions. It prints the session id and log path. Logs are written as JSONL
+under `.agent-harness/sessions/` and include adapter decisions, observations,
+tool calls, tool results, errors, and final responses.
 
 Inspect or resume an existing read-only session:
 
@@ -194,7 +196,9 @@ uv run harness run --resume --session-id <session-id>
 
 The runtime can classify safe local shell commands and has workspace-write file
 tools in the domain layer, but the CLI run path remains read-only. Destructive,
-network, deployment, and unknown command classes are denied by default.
+network, deployment, and unknown command classes are denied by default. Real LLM
+planning, write sessions, approvals, sub-agents, and context compression remain
+deferred.
 
 ## Proposals And Refresh
 

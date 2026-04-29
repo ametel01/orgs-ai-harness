@@ -9,6 +9,17 @@ from pathlib import Path
 from typing import cast
 
 from orgs_ai_harness.artifact_schemas import JsonValue
+from orgs_ai_harness.runtime_adapter import (
+    FinalResponseDecision,
+    FixtureRuntimeAdapter,
+    RuntimeAdapter,
+    RuntimeAdapterError,
+    RuntimeAdapterInput,
+    ToolCallDecision,
+    adapter_decision_from_json,
+    build_adapter_skill_catalog,
+    build_adapter_tool_catalog,
+)
 from orgs_ai_harness.runtime_context import assemble_runtime_context
 from orgs_ai_harness.runtime_events import RuntimeSessionStore
 from orgs_ai_harness.runtime_hooks import HookedToolDispatcher, ToolHookContext, ToolHookDecision
@@ -16,6 +27,45 @@ from orgs_ai_harness.runtime_permissions import PermissionError, PermissionLevel
 from orgs_ai_harness.runtime_recovery import summarize_recovery
 from orgs_ai_harness.runtime_runner import run_read_only_session
 from orgs_ai_harness.runtime_tools import ToolExecutionContext, ToolRegistry, ToolResult, default_tool_registry
+
+
+class RuntimeAdapterContractTests(unittest.TestCase):
+    def test_decision_contracts_serialize_and_parse(self) -> None:
+        tool_decision = ToolCallDecision("local.cwd", {"include_workspace": True})
+        final_decision = FinalResponseDecision("done")
+
+        self.assertEqual(adapter_decision_from_json(tool_decision.to_json()), tool_decision)
+        self.assertEqual(adapter_decision_from_json(final_decision.to_json()), final_decision)
+        self.assertEqual(tool_decision.to_json()["tool_id"], "local.cwd")
+        self.assertEqual(final_decision.to_json()["summary"], "done")
+
+    def test_malformed_adapter_decisions_fail_clearly(self) -> None:
+        cases: list[object] = [
+            {"type": "tool_call", "tool_id": "", "tool_input": {}},
+            {"type": "tool_call", "tool_id": "local.cwd", "tool_input": []},
+            {"type": "final_response", "summary": ""},
+            {"type": "unknown"},
+            [],
+        ]
+
+        for case in cases:
+            with self.subTest(case=case):
+                with self.assertRaises(RuntimeAdapterError):
+                    adapter_decision_from_json(case)
+
+    def test_fixture_adapter_returns_decisions_in_order_and_records_observations(self) -> None:
+        adapter = FixtureRuntimeAdapter([ToolCallDecision("local.cwd", {}), FinalResponseDecision("done")])
+        first_input = RuntimeAdapterInput(goal="inspect", context=[], tools=(), skill_catalog={"skills": []})
+        first_decision = adapter.decide(first_input)
+        second_input = RuntimeAdapterInput(goal="inspect", context=[], tools=(), skill_catalog={"skills": []})
+        second_decision = adapter.decide(second_input)
+
+        self.assertIsInstance(first_decision, ToolCallDecision)
+        self.assertIsInstance(second_decision, FinalResponseDecision)
+        self.assertEqual(adapter.input_history, [first_input, second_input])
+
+        with self.assertRaises(RuntimeAdapterError):
+            FixtureRuntimeAdapter([])
 
 
 class RuntimeEventStoreTests(unittest.TestCase):
@@ -63,6 +113,44 @@ class RuntimeEventStoreTests(unittest.TestCase):
             self.assertIsNone(complete_summary.pending_tool_call)
             self.assertIsNotNone(complete_summary.final_response)
             self.assertFalse(complete_summary.can_resume_read_only)
+
+    def test_recovery_summary_distinguishes_pending_adapter_decisions(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            store = RuntimeSessionStore(Path(tmp))
+            decision = store.append_event(
+                "session-a",
+                "adapter_decision",
+                {"decision": ToolCallDecision("local.cwd", {}).to_json()},
+            )
+            pending_summary = summarize_recovery(store.read_session("session-a"))
+
+            self.assertEqual(pending_summary.pending_adapter_decision, decision)
+            self.assertFalse(pending_summary.can_resume_read_only)
+
+            call = store.append_event(
+                "session-a",
+                "tool_call",
+                {"tool_id": "local.cwd", "adapter_decision_event_id": decision.event_id},
+            )
+            store.append_event(
+                "session-a",
+                "tool_result",
+                {"tool_call_event_id": call.event_id, "adapter_decision_event_id": decision.event_id},
+            )
+            tool_result_only = summarize_recovery(store.read_session("session-a"))
+            self.assertIsNotNone(tool_result_only.pending_adapter_decision)
+            self.assertIsNone(tool_result_only.pending_tool_call)
+
+            store.append_event(
+                "session-a",
+                "adapter_observation",
+                {"adapter_decision_event_id": decision.event_id, "tool_call_event_id": call.event_id},
+            )
+            recovered = summarize_recovery(store.read_session("session-a"))
+
+            self.assertIsNone(recovered.pending_adapter_decision)
+            self.assertIsNone(recovered.pending_tool_call)
+            self.assertTrue(recovered.can_resume_read_only)
 
 
 class RuntimeToolTests(unittest.TestCase):
@@ -197,20 +285,106 @@ class RuntimeContextAndLoopTests(unittest.TestCase):
             self.assertEqual(instruction_files[0]["path"], "AGENTS.md")
             self.assertLessEqual(len(skills), 20)
 
+    def test_adapter_catalogs_include_sorted_tools_and_bounded_skills(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            workspace = Path(tmp)
+            skill = workspace / "org-agent-skills" / "org" / "skills" / "sample"
+            skill.mkdir(parents=True)
+            (skill / "SKILL.md").write_text("---\nname: sample\n---\n" + ("x" * 200), encoding="utf-8")
+            resolver = workspace / "org-agent-skills" / "repos" / "sample" / "resolvers.yml"
+            resolver.parent.mkdir(parents=True)
+            resolver.write_text("resolvers:\n  - name: sample\n", encoding="utf-8")
+
+            tool_catalog = build_adapter_tool_catalog(default_tool_registry())
+            skill_catalog = build_adapter_skill_catalog(
+                assemble_runtime_context(workspace, budget_chars=120), budget_chars=80
+            )
+
+            tool_ids = [cast(str, tool["tool_id"]) for tool in tool_catalog]
+            self.assertEqual(tool_ids, sorted(tool_ids))
+            self.assertIn("required_permission", tool_catalog[0])
+            skills = cast(list[dict[str, object]], skill_catalog["skills"])
+            resolvers = cast(list[dict[str, object]], skill_catalog["resolvers"])
+            self.assertEqual(skills[0]["path"], "org-agent-skills/org/skills/sample/SKILL.md")
+            self.assertLessEqual(len(cast(str, skills[0]["content"])), 80)
+            self.assertEqual(resolvers[0]["path"], "org-agent-skills/repos/sample/resolvers.yml")
+
     def test_run_loop_persists_context_tool_result_and_final_response(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
             workspace = Path(tmp)
             subprocess.run(["git", "init"], cwd=workspace, text=True, capture_output=True, check=True)
 
-            result = run_read_only_session(workspace, "summarize this repo state", session_id="session-a")
+            adapter = FixtureRuntimeAdapter([ToolCallDecision("local.cwd", {}), FinalResponseDecision("done")])
+            result = run_read_only_session(
+                workspace, "summarize this repo state", adapter=adapter, session_id="session-a"
+            )
             events = RuntimeSessionStore(workspace / ".agent-harness" / "sessions").read_session("session-a").events
             event_types = [event.event_type for event in events]
 
             self.assertEqual(result.session_id, "session-a")
             self.assertIn("context_assembled", event_types)
+            self.assertIn("adapter_decision", event_types)
             self.assertIn("tool_call", event_types)
             self.assertIn("tool_result", event_types)
+            self.assertIn("adapter_observation", event_types)
             self.assertEqual(event_types[-1], "final_response")
+            self.assertEqual(len(adapter.received_observations), 1)
+
+    def test_denied_tool_max_steps_malformed_decision_and_adapter_exception_are_logged(self) -> None:
+        class MalformedAdapter:
+            def decide(self, adapter_input: RuntimeAdapterInput) -> object:
+                return {"type": "tool_call", "tool_id": "local.cwd", "tool_input": []}
+
+        class ExplodingAdapter:
+            def decide(self, adapter_input: RuntimeAdapterInput) -> object:
+                raise RuntimeError("adapter offline")
+
+        with tempfile.TemporaryDirectory() as tmp:
+            workspace = Path(tmp)
+            denied = run_read_only_session(
+                workspace,
+                "try write",
+                adapter=FixtureRuntimeAdapter([ToolCallDecision("local.write_file", {"path": "x", "content": "x"})]),
+                session_id="denied",
+            )
+            maxed = run_read_only_session(
+                workspace,
+                "loop",
+                adapter=FixtureRuntimeAdapter([ToolCallDecision("local.cwd", {}), ToolCallDecision("local.cwd", {})]),
+                max_steps=2,
+                session_id="maxed",
+            )
+            malformed = run_read_only_session(
+                workspace,
+                "malformed",
+                adapter=cast(RuntimeAdapter, MalformedAdapter()),
+                session_id="malformed",
+            )
+            exploded = run_read_only_session(
+                workspace,
+                "explode",
+                adapter=cast(RuntimeAdapter, ExplodingAdapter()),
+                session_id="exploded",
+            )
+            unknown = run_read_only_session(
+                workspace,
+                "unknown",
+                adapter=FixtureRuntimeAdapter([ToolCallDecision("missing.tool", {})]),
+                session_id="unknown",
+            )
+            store = RuntimeSessionStore(workspace / ".agent-harness" / "sessions")
+
+            self.assertFalse(denied.ok)
+            self.assertIn("denied", denied.summary)
+            self.assertFalse(maxed.ok)
+            self.assertIn("max_steps=2", maxed.summary)
+            self.assertFalse(malformed.ok)
+            self.assertIn("tool_input", malformed.summary)
+            self.assertFalse(exploded.ok)
+            self.assertIn("adapter offline", exploded.summary)
+            self.assertFalse(unknown.ok)
+            self.assertIn("unknown runtime tool", unknown.summary)
+            self.assertTrue(any(event.event_type == "error" for event in store.read_session("exploded").events))
 
     def test_cli_run_creates_session_log_and_resume_reports_recovery_state(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:

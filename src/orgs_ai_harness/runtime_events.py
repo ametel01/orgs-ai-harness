@@ -13,6 +13,8 @@ from orgs_ai_harness.artifact_schemas import JsonValue
 RUNTIME_EVENT_TYPES = {
     "session_started",
     "context_assembled",
+    "adapter_decision",
+    "adapter_observation",
     "message",
     "tool_call",
     "tool_result",

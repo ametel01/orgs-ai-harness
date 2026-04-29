@@ -1,0 +1,216 @@
+"""Adapter contracts for the read-only runtime loop."""
+
+from __future__ import annotations
+
+import math
+from dataclasses import dataclass, field
+from typing import Protocol, TypeAlias, cast
+
+from orgs_ai_harness.artifact_schemas import JsonValue
+from orgs_ai_harness.runtime_context import RuntimeContext
+from orgs_ai_harness.runtime_tools import ToolRegistry
+
+JsonObject: TypeAlias = dict[str, JsonValue]
+AdapterDecision: TypeAlias = "ToolCallDecision | FinalResponseDecision"
+
+
+class RuntimeAdapterError(Exception):
+    """Raised when an adapter decision or input contract is invalid."""
+
+
+@dataclass(frozen=True)
+class ToolCallDecision:
+    tool_id: str
+    tool_input: JsonObject
+    rationale: str | None = None
+
+    def __post_init__(self) -> None:
+        if not isinstance(self.tool_id, str) or not self.tool_id:
+            raise RuntimeAdapterError("tool-call decision requires a non-empty tool_id")
+        if not isinstance(self.tool_input, dict):
+            raise RuntimeAdapterError("tool-call decision requires JSON object tool_input")
+        _validate_json_value(self.tool_input, path="tool_input")
+        if self.rationale is not None and not isinstance(self.rationale, str):
+            raise RuntimeAdapterError("tool-call decision rationale must be a string when provided")
+
+    def to_json(self) -> JsonObject:
+        payload: JsonObject = {"type": "tool_call", "tool_id": self.tool_id, "tool_input": self.tool_input}
+        if self.rationale is not None:
+            payload["rationale"] = self.rationale
+        return payload
+
+
+@dataclass(frozen=True)
+class FinalResponseDecision:
+    summary: str
+
+    def __post_init__(self) -> None:
+        if not isinstance(self.summary, str) or not self.summary:
+            raise RuntimeAdapterError("final-response decision requires a non-empty summary")
+
+    def to_json(self) -> JsonObject:
+        return {"type": "final_response", "summary": self.summary}
+
+
+@dataclass(frozen=True)
+class RuntimeAdapterObservation:
+    adapter_decision_event_id: str
+    tool_call_event_id: str
+    tool_id: str
+    result: JsonObject
+
+    def to_json(self) -> JsonObject:
+        return {
+            "adapter_decision_event_id": self.adapter_decision_event_id,
+            "tool_call_event_id": self.tool_call_event_id,
+            "tool_id": self.tool_id,
+            "result": self.result,
+        }
+
+
+@dataclass(frozen=True)
+class RuntimeAdapterInput:
+    goal: str
+    context: list[JsonObject]
+    tools: tuple[JsonObject, ...]
+    skill_catalog: JsonObject
+    observations: tuple[RuntimeAdapterObservation, ...] = ()
+    permission_mode: str = "read-only"
+
+    def to_json(self) -> JsonObject:
+        return {
+            "goal": self.goal,
+            "context": cast(JsonValue, self.context),
+            "tools": cast(JsonValue, list(self.tools)),
+            "skill_catalog": self.skill_catalog,
+            "observations": cast(JsonValue, [observation.to_json() for observation in self.observations]),
+            "permission_mode": self.permission_mode,
+        }
+
+
+class RuntimeAdapter(Protocol):
+    def decide(self, adapter_input: RuntimeAdapterInput) -> AdapterDecision:
+        """Return the next runtime decision."""
+        ...
+
+
+@dataclass
+class FixtureRuntimeAdapter:
+    decisions: tuple[AdapterDecision, ...]
+    input_history: list[RuntimeAdapterInput] = field(default_factory=list)
+
+    def __init__(
+        self, decisions: tuple[AdapterDecision | JsonObject, ...] | list[AdapterDecision | JsonObject]
+    ) -> None:
+        if not decisions:
+            raise RuntimeAdapterError("fixture adapter requires at least one scripted decision")
+        self.decisions = tuple(coerce_adapter_decision(decision) for decision in decisions)
+        self.input_history = []
+        self._cursor = 0
+
+    @property
+    def received_observations(self) -> tuple[RuntimeAdapterObservation, ...]:
+        if not self.input_history:
+            return ()
+        return self.input_history[-1].observations
+
+    def decide(self, adapter_input: RuntimeAdapterInput) -> AdapterDecision:
+        self.input_history.append(adapter_input)
+        if self._cursor >= len(self.decisions):
+            raise RuntimeAdapterError("fixture adapter decision sequence exhausted")
+        decision = self.decisions[self._cursor]
+        self._cursor += 1
+        return decision
+
+
+def coerce_adapter_decision(raw: AdapterDecision | JsonObject) -> AdapterDecision:
+    if isinstance(raw, ToolCallDecision | FinalResponseDecision):
+        return raw
+    return adapter_decision_from_json(raw)
+
+
+def adapter_decision_from_json(raw: object) -> AdapterDecision:
+    if not isinstance(raw, dict):
+        raise RuntimeAdapterError("adapter decision must be a JSON object")
+    decision_type = raw.get("type")
+    if decision_type == "tool_call":
+        tool_id = raw.get("tool_id")
+        tool_input = raw.get("tool_input")
+        rationale = raw.get("rationale")
+        if not isinstance(tool_id, str):
+            raise RuntimeAdapterError("tool-call decision field tool_id must be a string")
+        if not isinstance(tool_input, dict):
+            raise RuntimeAdapterError("tool-call decision field tool_input must be an object")
+        if rationale is not None and not isinstance(rationale, str):
+            raise RuntimeAdapterError("tool-call decision field rationale must be a string")
+        return ToolCallDecision(tool_id=tool_id, tool_input=cast(JsonObject, tool_input), rationale=rationale)
+    if decision_type == "final_response":
+        summary = raw.get("summary")
+        if not isinstance(summary, str):
+            raise RuntimeAdapterError("final-response decision field summary must be a string")
+        return FinalResponseDecision(summary=summary)
+    raise RuntimeAdapterError("adapter decision type must be 'tool_call' or 'final_response'")
+
+
+def build_adapter_tool_catalog(registry: ToolRegistry) -> tuple[JsonObject, ...]:
+    return tuple(
+        {
+            "tool_id": tool.tool_id,
+            "description": tool.description,
+            "input_schema": tool.input_schema,
+            "required_permission": tool.required_permission.value,
+        }
+        for tool in registry.list_tools()
+    )
+
+
+def build_adapter_skill_catalog(runtime_context: RuntimeContext, *, budget_chars: int = 4000) -> JsonObject:
+    skills_section = next((section for section in runtime_context.sections if section.name == "skills"), None)
+    if skills_section is None:
+        return {"skills": [], "resolvers": []}
+    return {
+        "skills": cast(JsonValue, _bounded_records(skills_section.payload.get("skills"), budget_chars=budget_chars)),
+        "resolvers": cast(
+            JsonValue, _bounded_records(skills_section.payload.get("resolvers"), budget_chars=budget_chars)
+        ),
+    }
+
+
+def _bounded_records(raw_records: JsonValue | None, *, budget_chars: int) -> list[JsonObject]:
+    if not isinstance(raw_records, list):
+        return []
+    records: list[JsonObject] = []
+    remaining = budget_chars
+    for raw_record in raw_records:
+        if not isinstance(raw_record, dict):
+            continue
+        path = raw_record.get("path")
+        content = raw_record.get("content")
+        if not isinstance(path, str) or not isinstance(content, str):
+            continue
+        bounded_content = content[: max(0, remaining)]
+        records.append({"path": path, "content": bounded_content})
+        remaining -= len(bounded_content)
+        if remaining <= 0:
+            break
+    return records
+
+
+def _validate_json_value(value: JsonValue, *, path: str) -> None:
+    if value is None or isinstance(value, str | bool | int):
+        return
+    if isinstance(value, float):
+        if not math.isfinite(value):
+            raise RuntimeAdapterError(f"{path} must be JSON-safe; non-finite float is not allowed")
+        return
+    if isinstance(value, list):
+        for index, item in enumerate(value):
+            _validate_json_value(item, path=f"{path}[{index}]")
+        return
+    if isinstance(value, dict):
+        for key, item in value.items():
+            if not isinstance(key, str):
+                raise RuntimeAdapterError(f"{path} object keys must be strings")
+            _validate_json_value(item, path=f"{path}.{key}")
+        return
+    raise RuntimeAdapterError(f"{path} contains unsupported JSON value: {type(value).__name__}")

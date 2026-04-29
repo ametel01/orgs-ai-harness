@@ -210,9 +210,14 @@ The output includes a session id and JSONL log path under
 
 - `session_started`
 - `context_assembled`
+- one or more `adapter_decision` events
 - one or more `tool_call` events
 - matching `tool_result` events
+- matching `adapter_observation` events for tool-call decisions
 - `final_response`
+
+The current CLI path is deterministic and fixture-adapter driven. It exercises
+the adapter protocol and read-only tool loop without calling a real LLM provider.
 
 Inspect/resume a read-only session:
 
@@ -228,6 +233,8 @@ Common failures:
   by the original run.
 - A malformed session log is reported as recovery diagnostics rather than being
   silently ignored.
+- Adapter exceptions, malformed decisions, max-step stops, and denied tool calls
+  are logged as `error` events and surfaced through the final diagnostic summary.
 
 Permission behavior is intentionally conservative. The CLI run path uses
 read-only mode. Workspace-write tools are available to tests and future runtime

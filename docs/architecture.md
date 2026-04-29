@@ -41,8 +41,9 @@ become real needs.
 - `llm_runner.py` is the shared subprocess helper for long-running local LLM CLI
   calls.
 - `runtime_events.py`, `runtime_context.py`, `runtime_permissions.py`,
-  `runtime_tools.py`, `runtime_hooks.py`, `runtime_recovery.py`, and
-  `runtime_runner.py` implement the first runtime vertical slice.
+  `runtime_adapter.py`, `runtime_tools.py`, `runtime_hooks.py`,
+  `runtime_recovery.py`, and `runtime_runner.py` implement the first runtime
+  vertical slice.
 
 Dependency direction should stay one-way: `cli.py` depends on domain modules,
 domain modules depend on `repo_registry.py` and shared schemas, and validation
@@ -79,8 +80,9 @@ safety policy become runtime subsystems rather than the whole product boundary.
 
 ## Implemented Runtime Slice
 
-`harness run <goal>` is currently deterministic and local. It does not call an
-LLM, spawn sub-agents, or make autonomous edits. The slice proves the runtime
+`harness run <goal>` is currently adapter-driven, deterministic, and local. The
+default CLI path uses a fixture-style adapter, not a real LLM provider. It does
+not spawn sub-agents or make autonomous edits. The slice proves the runtime
 contracts that later model-driven loops will use:
 
 - session logs are append-only JSONL files under `.agent-harness/sessions/`
@@ -88,6 +90,10 @@ contracts that later model-driven loops will use:
   metadata, and JSON-safe payloads
 - context assembly records workspace metadata, git metadata, project
   instructions, harness/cache state, and bounded skill/resolver summaries
+- runtime adapters receive the goal, assembled context, sorted tool catalog,
+  bounded skill/resolver catalog, prior observations, and active permission mode
+- adapter decisions can request a tool call with JSON-safe input or provide a
+  final human-readable response
 - the tool registry exposes typed tool metadata, permission requirements, and
   structured `ToolResult` payloads
 - read-only mode can inspect cwd, git status, and text search results
@@ -99,10 +105,14 @@ contracts that later model-driven loops will use:
   paths, and report changed paths for audit
 - pre-tool hooks can deny dispatch and post-tool hooks can attach warnings or
   audit metadata
-- recovery reads session logs, reports malformed records, pending tool calls,
-  latest errors, recovery markers, and final responses
+- the adapter loop records adapter decisions and observations, links tool calls
+  and tool results back to the requesting decision, stops at a max-step guard,
+  and logs adapter errors or denied tools as structured diagnostics
+- recovery reads session logs, reports malformed records, pending adapter
+  decisions, pending tool calls, latest errors, recovery markers, and final
+  responses
 
-Deferred runtime features remain model planning, context compression,
+Deferred runtime features remain real model planning, context compression,
 sub-agent delegation, approval prompts, broad shell access, network/deployment
 tools, and write-session repair beyond inspection.
 
@@ -117,9 +127,10 @@ actually supports.
 
 | Capability area | Implemented now | Still deferred |
 | --- | --- | --- |
-| Core harness runtime | A deterministic read-only `harness run <goal>` path that starts a session, assembles context, dispatches inspection tools, observes results, and records a final response | LLM-owned act/observe/adjust planning, autonomous code changes, context compression, and sub-agent delegation |
-| Session persistence | Append-only JSONL event logs with stable session ids, event ids, timestamps, event types, cwd/workspace metadata, and JSON-safe payloads | Long-term memory, compaction checkpoints, cross-session retrieval, and write-session repair beyond inspection |
-| Recovery | Session replay can summarize malformed records, latest recovery markers, latest errors, pending tool calls, and final responses; `harness run --resume --session-id <id>` inspects read-only sessions | Resuming model state, replaying unfinished tool outputs, and completing interrupted write sessions |
+| Core harness runtime | An adapter-driven read-only `harness run <goal>` path that starts a session, assembles context, asks a deterministic adapter for decisions, dispatches inspection tools, observes results, and records a final response | Real LLM-owned planning, autonomous code changes, context compression, and sub-agent delegation |
+| Runtime adapter contract | Provider-independent adapter input and decision contracts for JSON-safe tool calls and final responses, plus a deterministic fixture adapter for tests/default local execution | Hosted/provider LLM adapters, streaming decisions, and model-specific prompt assembly |
+| Session persistence | Append-only JSONL event logs with stable session ids, event ids, timestamps, event types, cwd/workspace metadata, adapter decisions, observations, tool results, errors, and JSON-safe payloads | Long-term memory, compaction checkpoints, cross-session retrieval, and write-session repair beyond inspection |
+| Recovery | Session replay can summarize malformed records, latest recovery markers, latest errors, pending adapter decisions, pending tool calls, and final responses; `harness run --resume --session-id <id>` inspects read-only sessions | Resuming model state, replaying unfinished tool outputs, and completing interrupted write sessions |
 | Context assembly | Workspace, OS/date, git status, recent commits, project instructions, harness/cache state, and bounded skill/resolver summaries are returned as structured sections | Token-budget optimization, semantic retrieval, automatic summarization, and dropped-context audit trails |
 | Tool registry | Runtime tools have stable ids, descriptions, input schema metadata, required permissions, callable dispatch, and structured result contracts | External tool adapters, hosted/provider tools, tool streaming, and rich schema validation beyond local metadata |
 | Permission model | `read-only`, `workspace-write`, `full-access`, and `high-risk` levels exist; dispatch denies tools above the active permission; command risk is classified before shell execution | Human approval prompts, persisted approval grants, sub-agent scopes, and configurable organization policy plugins |
