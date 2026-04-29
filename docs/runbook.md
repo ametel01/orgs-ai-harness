@@ -197,6 +197,32 @@ remain, or safety checks fail. Inspect:
 Use `--development` for draft-only local checks. Development eval results do not
 approve or verify a pack.
 
+Use CI replay for pull request artifacts:
+
+```sh
+uv run harness eval <repo-id> --ci --summary-path .agent-harness/ci-eval/<repo-id>.json
+```
+
+CI replay is deterministic and local-only. It supports only the fixture adapter,
+does not use credentials, does not prompt, and does not update `harness.yml`,
+`approval.yml`, or `pack-report.md`. It still writes `eval-report.yml`, appends
+eval traces, prints JSON to stdout, and writes the same JSON to `--summary-path`
+when provided. The GitHub Actions `CI Eval Replay` job discovers eligible
+registered repos, skips ineligible repos with a reason in
+`.agent-harness/ci-eval/discovery.json`, runs the CI command for eligible repos,
+and uploads `.agent-harness/ci-eval/` as the `ci-eval-replay` artifact. The job
+is artifact-only and non-blocking because it sets `continue-on-error: true`.
+
+Common CI replay failures:
+
+- `supports only deterministic local adapter 'fixture'`: remove a non-fixture
+  `--adapter` value from CI.
+- `not eligible for CI eval replay`: approve the pack or inspect the lifecycle
+  status before expecting CI replay.
+- `has no human-approved pack metadata`, `no user-approved onboarding evals`, or
+  `missing evals`: rerun onboarding/review and approve the generated eval
+  artifact.
+
 ## Runtime Sessions
 
 Start the runtime vertical slice. The default permission mode is read-only:

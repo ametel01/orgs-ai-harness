@@ -159,6 +159,22 @@ uv run harness eval <repo-id> --adapter codex-local
 uv run harness eval <repo-id> --development
 ```
 
+Run CI-safe eval replay when a workflow or automation needs deterministic,
+machine-readable output:
+
+```sh
+uv run harness eval <repo-id> --ci
+uv run harness eval <repo-id> --ci --summary-path .agent-harness/ci-eval/<repo-id>.json
+```
+
+CI mode is non-interactive, fixture-adapter only, and local-only. It rejects
+draft, investigation, external, inactive, unapproved, or missing-artifact repos
+with a JSON summary whose `status` is `error`. Successful summaries include
+`repo_id`, `status`, `baseline_pass_rate`, `skill_pack_pass_rate`,
+`baseline_delta`, `rediscovery_cost_delta`, `report_path`, and `trace_path`.
+Unlike local/manual eval, CI mode does not promote packs or rewrite approval
+lifecycle metadata.
+
 Refresh the repo-local cache and export for a runtime:
 
 ```sh

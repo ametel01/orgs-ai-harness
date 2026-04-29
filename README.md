@@ -57,6 +57,7 @@ uv run harness onboard <repo-id>
 uv run harness approve <repo-id> --all
 uv run harness reject <repo-id> --reason "<reason>"
 uv run harness eval <repo-id>
+uv run harness eval <repo-id> --ci --summary-path .agent-harness/ci-eval/<repo-id>.json
 uv run harness cache refresh <repo-id>
 uv run harness export codex <repo-id>
 ```
@@ -91,6 +92,9 @@ protects approved artifact hashes, records an approval trace, and moves the repo
 to `approved-unverified`. `harness eval <repo-id>` can promote an approved pack
 to `verified` when replay checks pass, or keep it `approved-unverified` with
 warnings when human-approved guidance has not been fully verified.
+`harness eval <repo-id> --ci` is the workflow-safe replay path: it uses the
+deterministic fixture adapter, emits a stable JSON summary, writes eval report
+artifacts, and does not promote or rewrite approval lifecycle metadata.
 
 Approved or verified packs can be refreshed into a repo-local
 `.agent-harness/cache/` directory and exported for a runtime target such as
@@ -133,7 +137,7 @@ and the skill format contract in
 
 | Area | Implemented | Deferred |
 | --- | --- | --- |
-| Skill lifecycle | Repo/org pack generation, validation, approval, eval replay, cache, export, proposal flow | CI eval replay, hosted dashboard, autonomous improvement |
+| Skill lifecycle | Repo/org pack generation, validation, approval, eval replay, CI eval replay, cache, export, proposal flow | Hosted dashboard, autonomous improvement |
 | Agent Skills contract | Generated `SKILL.md` frontmatter checks, directory-name matching, reference-link validation, bounded exported skill packs | Full external spec refresh automation and richer optional metadata policy |
 | Runtime loop | Adapter-driven `harness run <goal>` sessions with read-only default mode, explicit `--permission workspace-write` opt-in, deterministic fixture/default adapter decisions, optional subprocess-backed `codex-local` decisions, context assembly, tool calls, observations, max-step/error safeguards, and final response events | Approval prompts, broad autonomous operation, context compression |
 | Runtime persistence | Append-only session JSONL events for adapter decisions, observations, tool calls/results, errors, final responses, and recovery inspection | Durable memory model, compaction checkpoints, write-session repair |
