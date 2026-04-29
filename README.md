@@ -1,11 +1,14 @@
 # orgs-ai-harness
 
-CLI-first harness for generating, validating, approving, caching, and exporting
-organization and repository agent skill packs.
+`orgs-ai-harness` is a CLI-first path toward a complete AI harness: a working
+agent runtime that lets an LLM act through tools, feedback, memory, context
+management, permissions, skills, delegation, and iteration. The canonical target
+architecture is defined in [HARNESS_SPEC.md](local-docs/HARNESS_SPEC.md).
 
-The harness keeps generated agent guidance in a repo-local org pack, records
-approval and eval state, and exports approved packs into runtime-friendly
-directories only after the generated artifacts have passed validation.
+The current implemented CLI focuses on the skill-pack lifecycle inside that
+runtime: generating, validating, approving, caching, and exporting organization
+and repository agent skill packs. Those packs give the runtime durable operating
+knowledge while the rest of the runtime loop is built out.
 
 ## Setup
 
@@ -58,6 +61,13 @@ uv run harness cache refresh <repo-id>
 uv run harness export codex <repo-id>
 ```
 
+Start the current deterministic runtime slice:
+
+```sh
+uv run harness run "summarize this repo state"
+uv run harness run --resume --session-id <session-id>
+```
+
 Create and review proposed updates after source changes:
 
 ```sh
@@ -85,6 +95,27 @@ Approved or verified packs can be refreshed into a repo-local
 `.agent-harness/cache/` directory and exported for a runtime target such as
 Codex. Draft and investigation states require explicit development flags before
 export.
+
+## Target Harness Architecture
+
+The full harness architecture is broader than skill generation. The runtime must
+eventually own:
+
+- an outer act/observe/adjust loop
+- context management and compression
+- tool and skill registries
+- sub-agent delegation with scoped permissions
+- session persistence and recovery
+- system prompt assembly and project context injection
+- lifecycle hooks around tool execution
+- permission and safety enforcement
+
+The current CLI implements the skill, validation, trace, cache, export, proposal,
+and safety-policy foundation that this runtime will use. It also includes a
+first runtime vertical slice: `harness run <goal>` starts a read-only session,
+assembles bounded workspace context, enforces read-only tool permissions,
+dispatches local inspection tools, writes an append-only session JSONL log under
+`.agent-harness/sessions/`, and can inspect/resume an existing session log.
 
 Deeper workflow and boundary notes live in:
 

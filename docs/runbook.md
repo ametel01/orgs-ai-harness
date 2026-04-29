@@ -1,8 +1,12 @@
 # Runbook
 
-This runbook covers common local operations and failure modes for
-`orgs-ai-harness`. Run commands from the repository root unless a command
-explicitly targets `org-agent-skills/`.
+This runbook covers common local operations and failure modes for the current
+implemented `orgs-ai-harness` CLI. The canonical target is the complete harness
+runtime in [`local-docs/HARNESS_SPEC.md`](../local-docs/HARNESS_SPEC.md); the
+operations below maintain the skill-pack lifecycle foundation for that runtime.
+
+Run commands from the repository root unless a command explicitly targets
+`org-agent-skills/`.
 
 ## Setup And Health Check
 
@@ -192,6 +196,45 @@ remain, or safety checks fail. Inspect:
 
 Use `--development` for draft-only local checks. Development eval results do not
 approve or verify a pack.
+
+## Runtime Sessions
+
+Start the read-only runtime vertical slice:
+
+```sh
+uv run harness run "summarize this repo state"
+```
+
+The output includes a session id and JSONL log path under
+`.agent-harness/sessions/`. A healthy session contains at least:
+
+- `session_started`
+- `context_assembled`
+- one or more `tool_call` events
+- matching `tool_result` events
+- `final_response`
+
+Inspect/resume a read-only session:
+
+```sh
+uv run harness run --resume --session-id <session-id>
+```
+
+Common failures:
+
+- `harness run requires a goal unless --resume is used`: pass a goal string or
+  add `--resume`.
+- `harness run --resume requires --session-id`: provide the session id printed
+  by the original run.
+- A malformed session log is reported as recovery diagnostics rather than being
+  silently ignored.
+
+Permission behavior is intentionally conservative. The CLI run path uses
+read-only mode. Workspace-write tools are available to tests and future runtime
+paths, but they deny writes outside the workspace and protected generated pack
+artifacts. Safe shell dispatch uses argv execution and denies destructive,
+network, deployment, and unknown command classes unless a future approval path
+adds broader permissions.
 
 ## Cache And Export
 

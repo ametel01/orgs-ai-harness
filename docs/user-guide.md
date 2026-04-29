@@ -1,7 +1,12 @@
 # User Guide
 
-This guide covers the current user-facing harness workflow. Run commands from
-the repository root or from a workspace that contains `org-agent-skills/`.
+This guide covers the current implemented CLI workflow. The canonical product
+target is the full harness runtime described in
+[`local-docs/HARNESS_SPEC.md`](../local-docs/HARNESS_SPEC.md); the commands
+below cover the skill-pack lifecycle foundation that runtime will use.
+
+Run commands from the repository root or from a workspace that contains
+`org-agent-skills/`.
 
 ## Setup
 
@@ -168,6 +173,28 @@ Draft and investigation exports require explicit development flags:
 uv run harness export generic <repo-id> --allow-draft
 uv run harness export generic <repo-id> --development
 ```
+
+## Runtime Session Slice
+
+Run the current read-only runtime loop from a workspace:
+
+```sh
+uv run harness run "summarize this repo state"
+```
+
+The command starts a persisted session, assembles bounded context, runs local
+inspection tools under read-only permissions, and prints the session id and log
+path. Logs are written as JSONL under `.agent-harness/sessions/`.
+
+Inspect or resume an existing read-only session:
+
+```sh
+uv run harness run --resume --session-id <session-id>
+```
+
+The runtime can classify safe local shell commands and has workspace-write file
+tools in the domain layer, but the CLI run path remains read-only. Destructive,
+network, deployment, and unknown command classes are denied by default.
 
 ## Proposals And Refresh
 

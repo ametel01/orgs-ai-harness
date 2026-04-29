@@ -50,6 +50,9 @@ from orgs_ai_harness.repo_registry import (
     remove_repo,
     set_repo_path,
 )
+from orgs_ai_harness.runtime_events import RuntimeEventError
+from orgs_ai_harness.runtime_runner import resume_read_only_session, run_read_only_session
+from orgs_ai_harness.runtime_tools import RuntimeToolError
 from orgs_ai_harness.validation import validate_org_pack, validate_repo_onboarding
 
 PROJECT_ROOT = Path(__file__).resolve().parents[2]
@@ -75,6 +78,12 @@ def build_parser() -> argparse.ArgumentParser:
     setup_parser.add_argument(
         "--skill-target", choices=("codex", "claude", "both"), help="Where to install generated skills"
     )
+
+    run_parser = subparsers.add_parser("run", help="Start or resume a read-only runtime session")
+    run_parser.add_argument("goal", nargs="?", help="Goal for a new runtime session")
+    run_parser.add_argument("--session-root", help="Directory containing runtime session JSONL logs")
+    run_parser.add_argument("--session-id", help="Explicit session id for deterministic tests or resume")
+    run_parser.add_argument("--resume", action="store_true", help="Resume/inspect an existing read-only session")
 
     org_parser = subparsers.add_parser("org", help="Manage org skill packs")
     org_subparsers = org_parser.add_subparsers(dest="org_command", required=True)
@@ -220,6 +229,8 @@ def main(argv: list[str] | None = None) -> int:
         CacheManagerError,
         ExplainError,
         ProposalError,
+        RuntimeEventError,
+        RuntimeToolError,
     ) as exc:
         print(f"error: {exc}", file=sys.stderr)
         return 1
@@ -228,6 +239,7 @@ def main(argv: list[str] | None = None) -> int:
 def _handler_for_command(command: str):
     handlers = {
         "setup": _handle_setup_command,
+        "run": _handle_run_command,
         "org": _handle_org_command,
         "validate": _handle_validate_command,
         "onboard": _handle_onboard_command,
@@ -247,6 +259,26 @@ def _handler_for_command(command: str):
 
 def _handle_setup_command(args: argparse.Namespace) -> int:
     return _run_setup_wizard(args, input_stream=sys.stdin, output_stream=sys.stdout)
+
+
+def _handle_run_command(args: argparse.Namespace) -> int:
+    session_root = Path(args.session_root).resolve() if args.session_root else None
+    if args.resume:
+        if not args.session_id:
+            raise RuntimeEventError("harness run --resume requires --session-id")
+        summary = resume_read_only_session(session_root or Path.cwd() / ".agent-harness" / "sessions", args.session_id)
+        print(
+            f"Resumed session {summary.session_id}; events={summary.event_count}; "
+            f"malformed={summary.malformed_count}; can_resume_read_only={str(summary.can_resume_read_only).lower()}"
+        )
+        return 0
+    if not args.goal:
+        raise RuntimeEventError("harness run requires a goal unless --resume is used")
+    result = run_read_only_session(Path.cwd(), args.goal, session_root=session_root, session_id=args.session_id)
+    print(result.summary)
+    print(f"Session: {result.session_id}")
+    print(f"Log: {result.session_path}")
+    return 0
 
 
 def _handle_org_command(args: argparse.Namespace) -> int:

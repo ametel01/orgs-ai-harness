@@ -1,10 +1,15 @@
 # Architecture
 
-`orgs-ai-harness` is a CLI-first Python package for generating, validating,
-approving, caching, and exporting organization and repository agent skill packs.
-The repo intentionally keeps the architecture simple: command parsing is in one
-entrypoint, while lifecycle behavior lives in small domain modules under
-`src/orgs_ai_harness/`.
+`orgs-ai-harness` is being built toward the canonical harness definition in
+[`local-docs/HARNESS_SPEC.md`](../local-docs/HARNESS_SPEC.md): a complete agent
+runtime that lets an LLM act through tools, feedback, memory, context
+management, permissions, skills, delegation, and iteration.
+
+The current Python package implements the skill-pack lifecycle foundation for
+that runtime: generating, validating, approving, caching, and exporting
+organization and repository agent skill packs. Command parsing is in one
+entrypoint, while implemented lifecycle behavior lives in small domain modules
+under `src/orgs_ai_harness/`.
 
 The committed `docs/` directory is the current documentation surface. MkDocs is
 not introduced yet because the repository only needs a few operational pages.
@@ -35,11 +40,71 @@ become real needs.
   artifacts.
 - `llm_runner.py` is the shared subprocess helper for long-running local LLM CLI
   calls.
+- `runtime_events.py`, `runtime_context.py`, `runtime_permissions.py`,
+  `runtime_tools.py`, `runtime_hooks.py`, `runtime_recovery.py`, and
+  `runtime_runner.py` implement the first runtime vertical slice.
 
 Dependency direction should stay one-way: `cli.py` depends on domain modules,
 domain modules depend on `repo_registry.py` and shared schemas, and validation
 reads artifacts without driving generation. Avoid importing CLI concerns into
 domain modules.
+
+## Target Runtime Model
+
+The full harness architecture must add runtime ownership around the implemented
+skill lifecycle:
+
+- outer iteration loop: observe state, choose an action, call a tool, observe the
+  result, update the plan, and repeat until the task is done
+- context management and compression: decide which files, messages, tool results,
+  summaries, and dropped details belong in the active context
+- skills and tools management: expose primitive tools plus higher-level skills
+  through validated schemas, permission levels, execution paths, and result
+  formats
+- sub-agent management: spawn isolated child agents with focused prompts,
+  restricted tools, scoped permissions, and explicit result collection
+- session persistence and recovery: record messages, tool calls, tool results,
+  edits, approvals, compactions, errors, and recovery markers
+- system prompt assembly and project context injection: compose base
+  instructions, tool descriptions, permission rules, current workspace metadata,
+  project instructions, repo conventions, and available skills
+- lifecycle hooks: allow structured pre-tool and post-tool policy, audit,
+  redaction, and workflow checks
+- permission and safety layer: enforce read-only, workspace-write, full-access,
+  command-risk, and approval rules before dispatching tools
+
+The existing modules remain useful inside this larger runtime. Skill generation,
+resolver generation, validation, trace recording, cache/export, proposals, and
+safety policy become runtime subsystems rather than the whole product boundary.
+
+## Implemented Runtime Slice
+
+`harness run <goal>` is currently deterministic and local. It does not call an
+LLM, spawn sub-agents, or make autonomous edits. The slice proves the runtime
+contracts that later model-driven loops will use:
+
+- session logs are append-only JSONL files under `.agent-harness/sessions/`
+- events include session ids, event ids, timestamps, event type, cwd/workspace
+  metadata, and JSON-safe payloads
+- context assembly records workspace metadata, git metadata, project
+  instructions, harness/cache state, and bounded skill/resolver summaries
+- the tool registry exposes typed tool metadata, permission requirements, and
+  structured `ToolResult` payloads
+- read-only mode can inspect cwd, git status, and text search results
+- safe shell dispatch uses argv execution and conservative command risk
+  classification; destructive, network, deployment, and unknown command classes
+  are denied without higher permission support
+- workspace-write file tools exist behind explicit `workspace-write`
+  permission, enforce workspace boundaries, reject protected generated pack
+  paths, and report changed paths for audit
+- pre-tool hooks can deny dispatch and post-tool hooks can attach warnings or
+  audit metadata
+- recovery reads session logs, reports malformed records, pending tool calls,
+  latest errors, recovery markers, and final responses
+
+Deferred runtime features remain model planning, context compression,
+sub-agent delegation, approval prompts, broad shell access, network/deployment
+tools, and write-session repair beyond inspection.
 
 ## Org Pack Layout
 
