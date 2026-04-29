@@ -20,6 +20,7 @@ from orgs_ai_harness.org_pack import (
     init_org_pack,
     resolve_default_root,
 )
+from orgs_ai_harness.pr_artifacts import write_pr_review_artifacts
 from orgs_ai_harness.pr_review import ReviewError, collect_changed_files
 from orgs_ai_harness.proposals import (
     ProposalError,
@@ -202,6 +203,10 @@ def build_parser() -> argparse.ArgumentParser:
         help="Explicit repo-relative changed files for deterministic non-interactive review",
     )
     review_changed.add_argument("--files-from", help="Path to a newline-delimited changed-file list")
+    review_changed.add_argument("--json-path", help="Write the stable PR review JSON artifact to this path")
+    review_changed.add_argument(
+        "--markdown-path", help="Write the human-readable PR review Markdown artifact to this path"
+    )
 
     cache_parser = subparsers.add_parser("cache", help="Manage repo-local pinned caches")
     cache_subparsers = cache_parser.add_subparsers(dest="cache_command", required=True)
@@ -540,6 +545,17 @@ def _handle_review_command(args: argparse.Namespace) -> int:
     print(f"Review changed files for repo {result.repo_id}; source={result.source}; count={len(result.changed_files)}")
     for changed_file in result.changed_files:
         print(changed_file)
+    if args.json_path or args.markdown_path:
+        written = write_pr_review_artifacts(
+            root,
+            result,
+            json_path=Path(args.json_path) if args.json_path else None,
+            markdown_path=Path(args.markdown_path) if args.markdown_path else None,
+        )
+        if written.json_path is not None:
+            print(f"JSON artifact: {written.json_path}")
+        if written.markdown_path is not None:
+            print(f"Markdown artifact: {written.markdown_path}")
     return 0
 
 
