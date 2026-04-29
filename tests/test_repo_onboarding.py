@@ -1015,6 +1015,49 @@ class RepoOnboardingTests(unittest.TestCase):
             self.assertIn("harness validate fixture-repo", report["command_approvals_used"])
             self.assertTrue((root / "trace-summaries" / "eval-events.jsonl").is_file())
 
+    def test_cli_ci_eval_outputs_summary_without_lifecycle_promotion(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            tmp_path = Path(tmp)
+            create_basic_fixture_repo(tmp_path)
+            init_org_pack(tmp_path, "acme")
+            self.assertEqual(self.run_cli(tmp_path, "repo", "add", "fixture-repo").returncode, 0)
+            self.assertEqual(self.run_cli(tmp_path, "onboard", "fixture-repo").returncode, 0)
+            self.close_blocking_unknown(tmp_path, "fixture-repo")
+            self.assertEqual(self.run_cli(tmp_path, "approve", "fixture-repo", "--all").returncode, 0)
+            root = tmp_path / DEFAULT_PACK_DIR
+            artifact_root = root / "repos" / "fixture-repo"
+            config_before = (root / "harness.yml").read_bytes()
+            approval_before = (artifact_root / "approval.yml").read_bytes()
+            pack_report_before = (artifact_root / "pack-report.md").read_bytes()
+            summary_path = tmp_path / "ci-artifacts" / "fixture-repo.json"
+
+            eval_result = self.run_cli(
+                tmp_path,
+                "eval",
+                "fixture-repo",
+                "--ci",
+                "--summary-path",
+                str(summary_path),
+            )
+
+            self.assertEqual(eval_result.returncode, 0, eval_result.stderr)
+            summary = json.loads(eval_result.stdout)
+            written_summary = json.loads(summary_path.read_text(encoding="utf-8"))
+            self.assertEqual(summary, written_summary)
+            self.assertEqual(summary["repo_id"], "fixture-repo")
+            self.assertEqual(summary["status"], "verified")
+            self.assertTrue(summary["ci"])
+            self.assertIsNone(summary["error"])
+            self.assertIsInstance(summary["baseline_pass_rate"], float)
+            self.assertIsInstance(summary["skill_pack_pass_rate"], float)
+            self.assertTrue(Path(summary["report_path"]).is_file())
+            self.assertTrue(Path(summary["trace_path"]).is_file())
+            self.assertEqual((root / "harness.yml").read_bytes(), config_before)
+            self.assertEqual((artifact_root / "approval.yml").read_bytes(), approval_before)
+            self.assertEqual((artifact_root / "pack-report.md").read_bytes(), pack_report_before)
+            entries = load_repo_entries(root / "harness.yml")
+            self.assertEqual(entries[0].coverage_status, "approved-unverified")
+
     def test_cli_eval_refuses_draft_pack_unless_development_flag_is_used(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
             tmp_path = Path(tmp)
@@ -1133,6 +1176,37 @@ class RepoOnboardingTests(unittest.TestCase):
             self.assertIn("eval_answer", event_types)
             self.assertIn("scoring", event_types)
             self.assertIn("command_approval", event_types)
+
+    def test_cli_ci_eval_rejects_non_deterministic_adapter_with_error_summary(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            tmp_path = Path(tmp)
+            create_basic_fixture_repo(tmp_path)
+            init_org_pack(tmp_path, "acme")
+            self.assertEqual(self.run_cli(tmp_path, "repo", "add", "fixture-repo").returncode, 0)
+            self.assertEqual(self.run_cli(tmp_path, "onboard", "fixture-repo").returncode, 0)
+            self.assertEqual(self.run_cli(tmp_path, "approve", "fixture-repo", "--all").returncode, 0)
+            summary_path = tmp_path / "ci-artifacts" / "fixture-repo-error.json"
+
+            eval_result = self.run_cli(
+                tmp_path,
+                "eval",
+                "fixture-repo",
+                "--ci",
+                "--adapter",
+                "codex-local",
+                "--summary-path",
+                str(summary_path),
+            )
+
+            self.assertNotEqual(eval_result.returncode, 0)
+            self.assertIn("deterministic local adapter", eval_result.stderr)
+            summary = json.loads(eval_result.stdout)
+            self.assertEqual(summary, json.loads(summary_path.read_text(encoding="utf-8")))
+            self.assertEqual(summary["repo_id"], "fixture-repo")
+            self.assertEqual(summary["status"], "error")
+            self.assertIn("codex-local", summary["error"])
+            self.assertIsNone(summary["report_path"])
+            self.assertIsNone(summary["trace_path"])
 
     def test_cli_eval_verifies_pack_when_thresholds_pass_without_blocking_unknowns(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:

@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import argparse
+import json
 import os
 import shutil
 import sys
@@ -10,7 +11,7 @@ from pathlib import Path
 
 from orgs_ai_harness.approval import ApprovalError, approve_repo, reject_repo, render_approval_review
 from orgs_ai_harness.cache_manager import CacheManagerError, export_cached_pack, refresh_cache
-from orgs_ai_harness.eval_replay import EvalReplayError, run_eval
+from orgs_ai_harness.eval_replay import EvalReplayError, eval_error_summary, eval_result_summary, run_eval
 from orgs_ai_harness.explain import ExplainError, render_explain
 from orgs_ai_harness.llm_runner import run_llm_command_with_progress
 from orgs_ai_harness.org_pack import (
@@ -175,6 +176,13 @@ def build_parser() -> argparse.ArgumentParser:
     eval_parser = subparsers.add_parser("eval", help="Replay approved onboarding evals locally")
     eval_parser.add_argument("repo_id", help="Registered repo id to evaluate")
     eval_parser.add_argument("--adapter", default="fixture", help="Eval adapter to use: fixture or codex-local")
+    eval_parser.add_argument(
+        "--ci",
+        action="store_true",
+        help="Run deterministic non-interactive CI eval replay without lifecycle promotion",
+    )
+    eval_parser.add_argument("--json", action="store_true", help="Print the stable eval summary as JSON")
+    eval_parser.add_argument("--summary-path", help="Write the stable eval summary JSON to this path")
     eval_parser.add_argument(
         "--development",
         action="store_true",
@@ -388,14 +396,39 @@ def _handle_reject_command(args: argparse.Namespace) -> int:
 
 def _handle_eval_command(args: argparse.Namespace) -> int:
     root = resolve_default_root(Path.cwd())
-    result = run_eval(root, args.repo_id, adapter_id=args.adapter, development=args.development)
-    print(
-        f"Evaluated repo {result.repo_id}; baseline_pass_rate={result.baseline_pass_rate:.2f}; "
-        f"skill_pack_pass_rate={result.skill_pack_pass_rate:.2f}; "
-        f"rediscovery_cost_delta={result.rediscovery_cost_delta:.2f}; status={result.status}; "
-        f"report={result.report_path}"
-    )
+    try:
+        result = run_eval(root, args.repo_id, adapter_id=args.adapter, development=args.development, ci=args.ci)
+    except EvalReplayError as exc:
+        if args.ci or args.json or args.summary_path:
+            summary = eval_error_summary(args.repo_id, str(exc), ci=args.ci)
+            _emit_eval_summary(summary, args)
+            print(f"error: {exc}", file=sys.stderr)
+            return 1
+        raise
+
+    summary = eval_result_summary(result)
+    if args.ci or args.json:
+        _emit_eval_summary(summary, args)
+    else:
+        if args.summary_path:
+            _emit_eval_summary(summary, args)
+        print(
+            f"Evaluated repo {result.repo_id}; baseline_pass_rate={result.baseline_pass_rate:.2f}; "
+            f"skill_pack_pass_rate={result.skill_pack_pass_rate:.2f}; "
+            f"rediscovery_cost_delta={result.rediscovery_cost_delta:.2f}; status={result.status}; "
+            f"report={result.report_path}"
+        )
     return 0
+
+
+def _emit_eval_summary(summary: dict[str, object], args: argparse.Namespace) -> None:
+    payload = json.dumps(summary, indent=2, sort_keys=True)
+    if args.summary_path:
+        summary_path = Path(args.summary_path).resolve()
+        summary_path.parent.mkdir(parents=True, exist_ok=True)
+        summary_path.write_text(payload + "\n", encoding="utf-8")
+    if args.ci or args.json:
+        print(payload)
 
 
 def _handle_cache_command(args: argparse.Namespace) -> int:

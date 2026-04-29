@@ -27,6 +27,15 @@ class EvalReplayResult:
     baseline_delta: float
     rediscovery_cost_delta: float
     trace_path: Path
+    ci: bool = False
+
+
+SUMMARY_NUMERIC_FIELDS = (
+    "baseline_" + "pass_rate",
+    "skill_pack_" + "pass_rate",
+    "baseline_delta",
+    "rediscovery_cost_delta",
+)
 
 
 @dataclass(frozen=True)
@@ -140,11 +149,14 @@ def run_eval(
     *,
     adapter_id: str = "fixture",
     development: bool = False,
+    ci: bool = False,
 ) -> EvalReplayResult:
     """Run approved onboarding evals locally with and without the approved skill pack."""
 
     root = root.resolve()
-    entry = _find_eval_repo(root, repo_id, development=development)
+    if ci:
+        _ensure_ci_eval_options(adapter_id, development=development)
+    entry = _find_eval_repo(root, repo_id, development=development, ci=ci)
     artifact_root = root / "repos" / entry.id
     evals_path = artifact_root / "evals" / "onboarding.yml"
     evals = _load_json(evals_path, "evals")
@@ -211,6 +223,7 @@ def run_eval(
         "baseline_delta": baseline_delta,
         "rediscovery_cost_delta": rediscovery_cost_delta,
         "status": status,
+        "ci": ci,
         "blocking_unknowns": blocking_unknowns,
         "command_approvals_used": command_approvals,
         "development": development,
@@ -229,8 +242,9 @@ def run_eval(
         skill_pack,
         command_approvals,
     )
-    _update_pack_report(artifact_root / "pack-report.md", report)
-    _update_approval_after_eval(root, entry, approval, status, report, development=development)
+    if not ci:
+        _update_pack_report(artifact_root / "pack-report.md", report)
+        _update_approval_after_eval(root, entry, approval, status, report, development=development)
 
     return EvalReplayResult(
         repo_id=entry.id,
@@ -241,7 +255,40 @@ def run_eval(
         baseline_delta=baseline_delta,
         rediscovery_cost_delta=rediscovery_cost_delta,
         trace_path=trace_path,
+        ci=ci,
     )
+
+
+def eval_result_summary(result: EvalReplayResult) -> dict[str, object]:
+    """Return the stable machine-readable summary for CI eval replay callers."""
+
+    return {
+        "repo_id": result.repo_id,
+        "status": result.status,
+        "baseline_pass_rate": result.baseline_pass_rate,
+        "skill_pack_pass_rate": result.skill_pack_pass_rate,
+        "baseline_delta": result.baseline_delta,
+        "rediscovery_cost_delta": result.rediscovery_cost_delta,
+        "report_path": str(result.report_path),
+        "trace_path": str(result.trace_path),
+        "ci": result.ci,
+        "error": None,
+    }
+
+
+def eval_error_summary(repo_id: str, error: str, *, ci: bool) -> dict[str, object]:
+    """Return a stable failure summary without requiring callers to scrape stderr."""
+
+    summary: dict[str, object] = {
+        "repo_id": repo_id,
+        "status": "error",
+        "report_path": None,
+        "trace_path": None,
+        "ci": ci,
+        "error": error,
+    }
+    summary.update(dict.fromkeys(SUMMARY_NUMERIC_FIELDS, None))
+    return summary
 
 
 def score_answer(task: EvalTask, answer: AdapterAnswer) -> EvalScore:
@@ -295,7 +342,7 @@ def rediscovery_cost(metrics: AdapterMetrics) -> int:
     return sum(max(int(metrics.get(field, 0)), 0) for field in fields)
 
 
-def _find_eval_repo(root: Path, repo_id: str, *, development: bool) -> RepoEntry:
+def _find_eval_repo(root: Path, repo_id: str, *, development: bool, ci: bool) -> RepoEntry:
     normalized_repo_id = repo_id.strip()
     if not normalized_repo_id:
         raise EvalReplayError("repo id cannot be empty")
@@ -315,8 +362,20 @@ def _find_eval_repo(root: Path, repo_id: str, *, development: bool) -> RepoEntry
             )
         if entry.coverage_status not in {"draft", "approved-unverified", "verified", "needs-investigation"}:
             raise EvalReplayError(f"repo {entry.id} is not ready for eval replay: status={entry.coverage_status}")
+        if ci and entry.coverage_status not in {"approved-unverified", "verified"}:
+            raise EvalReplayError(
+                f"repo {entry.id} is not eligible for CI eval replay: status={entry.coverage_status}; "
+                "expected approved-unverified or verified"
+            )
         return entry
     raise EvalReplayError(f"repo id is not registered: {normalized_repo_id}")
+
+
+def _ensure_ci_eval_options(adapter_id: str, *, development: bool) -> None:
+    if development:
+        raise EvalReplayError("CI eval replay does not support --development")
+    if (adapter_id.strip() or "fixture") != "fixture":
+        raise EvalReplayError(f"CI eval replay supports only deterministic local adapter 'fixture'; got {adapter_id}")
 
 
 def _load_approval(
