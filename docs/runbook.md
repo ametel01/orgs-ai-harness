@@ -24,38 +24,98 @@ make build
 Use `make verify` before committing normal code or docs changes. Use all three
 gates before closing issue work.
 
+## First-Run Setup
+
+Use the setup wizard when starting from a GitHub owner, GitHub profile, or a
+local-only workspace:
+
+```sh
+uv run harness setup https://github.com/<owner>
+uv run harness setup <github-owner>
+uv run harness setup local
+```
+
+The wizard can initialize `org-agent-skills/`, discover or register
+repositories, optionally clone selected repositories, validate the pack, and
+offer skill generation, approval, development eval replay, cache refresh, export,
+and explain steps.
+
 ## Add Or Discover Repositories
 
 Initialize an org pack when starting from an empty workspace:
 
 ```sh
 uv run harness org init --name <org-name>
+uv run harness org init --github https://github.com/<owner>
+uv run harness org init --repo <path-or-git-url>
 ```
 
-Register a local repo or URL:
+Register a local repo, remote URL, or external dependency reference:
 
 ```sh
-uv run harness repo add <path-or-url>
+uv run harness repo add <path-or-url> --purpose "<purpose>" --owner <owner>
+uv run harness repo add git@github.com:vendor/sdk.git --external
 uv run harness repo list
 uv run harness validate
 ```
 
-Discover GitHub repositories with the GitHub CLI:
+Discover GitHub repositories with the GitHub CLI. In non-interactive use, pass
+`--select` with comma-separated repo ids or names:
 
 ```sh
 gh auth status
-uv run harness repo discover <github-owner>
+uv run harness repo discover <github-owner> --select api-service,web-app
+uv run harness repo discover --github-org <org> --select api-service
+uv run harness repo discover --github-user <user> --select cli-tools
+```
+
+Clone selected repositories while registering them:
+
+```sh
+uv run harness repo discover <github-owner> \
+  --select api-service,web-app \
+  --clone \
+  --clone-dir ./covered-repos
+```
+
+Archived repositories and forks are hidden unless requested:
+
+```sh
+uv run harness repo discover --github-org <org> \
+  --include-archived \
+  --include-forks \
+  --select old-tool,forked-sdk
+```
+
+Repair, deactivate, or remove coverage:
+
+```sh
+uv run harness repo set-path <repo-id> <path>
+uv run harness repo deactivate <repo-id> --reason "<reason>"
+uv run harness repo remove <repo-id> --reason "<reason>"
+uv run harness repo remove <repo-id> --reason "<reason>" --force
 ```
 
 If discovery fails, confirm `gh` is installed, authenticated, and authorized for
-the owner or organization.
+the owner or organization. If non-interactive discovery fails with
+`repo discover requires --select`, rerun with an explicit selection.
 
 ## Onboard A Repository
+
+Run a read-only scan before skill generation when you want to inspect evidence:
+
+```sh
+uv run harness onboard <repo-id> --scan-only
+uv run harness validate <repo-id>
+```
 
 Generate draft artifacts:
 
 ```sh
 uv run harness onboard <repo-id>
+uv run harness onboard <repo-id> --llm codex --skill-target codex
+uv run harness onboard <repo-id> --llm claude --skill-target claude
+uv run harness onboard <repo-id> --llm template --skill-target codex
 uv run harness validate <repo-id>
 uv run harness explain <repo-id>
 ```
@@ -64,8 +124,11 @@ Common failures:
 
 - `repo id is not registered`: run `uv run harness repo list` and use the exact
   `id`.
-- `repo <id> has no local path`: set or repair the local path before onboarding.
+- `repo <id> has no local path`: run `uv run harness repo set-path <repo-id>
+  <path>` before onboarding.
 - `repo path does not exist`: clone the repo or update the registry path.
+- `repo is an external dependency reference`: external entries are not selected
+  coverage and cannot be onboarded.
 - `needs-investigation`: inspect `unknowns.yml`, fill missing context, then
   rerun onboarding.
 - Validation errors for missing artifacts: rerun onboarding or restore the
@@ -80,6 +143,7 @@ leaked artifact content, and rerun the scan/generation path.
 Inspect generated files before approval:
 
 ```sh
+uv run harness approve <repo-id>
 uv run harness explain <repo-id>
 uv run harness validate <repo-id>
 ```
@@ -87,13 +151,14 @@ uv run harness validate <repo-id>
 Approve all artifacts:
 
 ```sh
-uv run harness approve <repo-id> --all
+uv run harness approve <repo-id> --all --rationale "<rationale>"
 ```
 
-Approve with exclusions when a generated artifact is wrong or unsafe:
+Approve with exclusions, or reject when generated artifacts are wrong or unsafe:
 
 ```sh
 uv run harness approve <repo-id> --exclude <artifact-path>
+uv run harness reject <repo-id> --reason "<reason>"
 ```
 
 Common failures:
@@ -101,6 +166,7 @@ Common failures:
 - `has no generated draft artifacts`: run onboarding first.
 - `approval cannot exclude every generated artifact`: reject or regenerate
   instead of creating an empty approved pack.
+- `is not in draft status`: only draft packs can be approved or rejected.
 - Protected artifact validation fails after approval: use the proposal flow for
   accepted changes instead of editing approved artifacts directly.
 
@@ -110,6 +176,8 @@ Run local replay after approval:
 
 ```sh
 uv run harness eval <repo-id>
+uv run harness eval <repo-id> --adapter codex-local
+uv run harness eval <repo-id> --development
 uv run harness validate <repo-id>
 ```
 
@@ -122,8 +190,8 @@ remain, or safety checks fail. Inspect:
 - `repos/<repo-id>/pack-report.md`
 - `trace-summaries/eval-events.jsonl`
 
-For a draft-only local check, use the development mode exposed by the CLI help.
-Do not treat development eval results as approval or verification.
+Use `--development` for draft-only local checks. Development eval results do not
+approve or verify a pack.
 
 ## Cache And Export
 
@@ -138,6 +206,8 @@ Export for a runtime target:
 ```sh
 uv run harness export codex <repo-id>
 uv run harness export generic <repo-id>
+uv run harness export generic <repo-id> --allow-draft
+uv run harness export generic <repo-id> --development
 ```
 
 Common failures:
@@ -146,6 +216,9 @@ Common failures:
   pack first.
 - `repo cache is missing`: run `harness cache refresh <repo-id>` before export.
 - `unsupported export target`: use `codex` or `generic`.
+- `repo <id> is draft; pass --allow-draft`: draft exports must be intentional.
+- `repo <id> needs investigation; pass --development`: investigation exports
+  are development-only.
 - `cache does not include applied proposals`: refresh the cache after applying
   proposals.
 

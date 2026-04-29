@@ -88,6 +88,7 @@ export.
 
 Deeper workflow and boundary notes live in:
 
+- [User Guide](docs/user-guide.md)
 - [Architecture](docs/architecture.md)
 - [Runbook](docs/runbook.md)
 

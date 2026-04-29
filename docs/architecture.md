@@ -15,7 +15,8 @@ become real needs.
 
 - `cli.py` parses commands, handles prompts, prints user-facing output, and
   delegates work to domain modules.
-- `config.py` locates and initializes org pack roots.
+- `org_pack.py` resolves, initializes, and attaches org pack roots.
+- `config.py` preserves and renders supported `harness.yml` top-level blocks.
 - `repo_registry.py` owns `harness.yml` repository entries and coverage status
   updates.
 - `repo_discovery.py` wraps GitHub discovery and optional cloning.
@@ -24,6 +25,7 @@ become real needs.
 - `approval.py` records explicit human approval and protected artifact hashes.
 - `eval_replay.py` runs local replay checks, writes eval reports, and promotes
   packs to `verified` only when thresholds are met.
+- `explain.py` renders a read-only state summary for one repository.
 - `cache_manager.py` creates repo-local read-only caches and runtime exports.
 - `proposals.py` records evidence-backed proposed changes without mutating
   accepted artifacts until a user applies the proposal.
@@ -65,10 +67,14 @@ Repository coverage moves through explicit states:
 - `approved-unverified`: a human approved the pack, but local eval replay has
   not verified it.
 - `verified`: approved artifacts passed replay thresholds.
+- `deactivated`: the registry entry is inactive but retained for audit history.
 - `external`: the entry is a dependency reference, not selected coverage.
 
-Onboarding starts with `harness repo add` or `harness repo discover`, then
-`harness onboard <repo-id>` scans safe evidence and writes draft artifacts:
+Onboarding starts with `harness setup`, `harness repo add`, or
+`harness repo discover`. Non-interactive discovery must pass `--select`.
+`harness onboard <repo-id> --scan-only` writes scan artifacts without generated
+skills. `harness onboard <repo-id>` scans safe evidence, uses the configured
+skill generator, and writes draft artifacts:
 
 - `onboarding-summary.md`
 - `unknowns.yml`
@@ -83,9 +89,11 @@ Onboarding starts with `harness repo add` or `harness repo discover`, then
 
 `harness validate <repo-id>` is the structural gate for generated artifacts.
 `harness approve <repo-id> --all` records approval metadata and protected hashes
-in `approval.yml`. `harness eval <repo-id>` compares baseline answers against
-skill-pack answers, writes `eval-report.yml`, appends eval trace summaries, and
-updates approval status.
+in `approval.yml`. `harness reject <repo-id>` records a rejection in
+`approval.yml`, leaves draft artifacts intact, and moves coverage back to
+`needs-investigation`. `harness eval <repo-id>` compares baseline answers
+against skill-pack answers, writes `eval-report.yml`, appends eval trace
+summaries, and updates approval status.
 
 ## Cache And Export Lifecycle
 
@@ -95,9 +103,9 @@ updates approval status.
 `.agent-harness.yml` pointer, and makes the cache read-only.
 
 `harness export codex <repo-id>` and `harness export generic <repo-id>` export
-from the cache into `.agent-harness/cache/exports/<target>/`. Draft and
-investigation exports require explicit development flags so runtime consumers do
-not accidentally use unreviewed guidance.
+from the cache into `.agent-harness/cache/exports/<target>/`. Draft exports
+require `--allow-draft`; `needs-investigation` exports require `--development`
+so runtime consumers do not accidentally use unreviewed guidance.
 
 ## Proposal Lifecycle
 
