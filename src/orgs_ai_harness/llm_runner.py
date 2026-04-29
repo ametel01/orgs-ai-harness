@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import os
 import queue
-import subprocess
+import subprocess  # nosec B404
 import sys
 import threading
 import time
@@ -26,7 +26,8 @@ def run_llm_command_with_progress(command: list[str], *, cwd: Path, log_path: Pa
     env = os.environ.copy()
     env["PYTHONUNBUFFERED"] = "1"
     with log_path.open("w", encoding="utf-8") as log:
-        process = subprocess.Popen(
+        # Bandit: caller-provided argv runs selected local LLM CLIs with shell=False.
+        process = subprocess.Popen(  # nosec B603
             command,
             cwd=cwd,
             text=True,
@@ -35,7 +36,8 @@ def run_llm_command_with_progress(command: list[str], *, cwd: Path, log_path: Pa
             env=env,
             bufsize=1,
         )
-        assert process.stdout is not None
+        if process.stdout is None:
+            raise RuntimeError("LLM subprocess stdout pipe was not created")
         output_queue: queue.Queue[str] = queue.Queue()
         reader = threading.Thread(target=_enqueue_process_output, args=(process.stdout, output_queue), daemon=True)
         reader.start()

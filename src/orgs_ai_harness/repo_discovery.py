@@ -5,7 +5,7 @@ from __future__ import annotations
 import json
 import os
 import shutil
-import subprocess
+import subprocess  # nosec B404
 from collections.abc import Callable
 from dataclasses import dataclass
 from pathlib import Path
@@ -392,7 +392,8 @@ def clone_discovered_repos(
                 local_paths[repo.id] = _relative_path(destination, root.resolve())
             continue
         destination.parent.mkdir(parents=True, exist_ok=True)
-        result = subprocess.run(
+        # Bandit: fixed git argv with shell=False.
+        result = subprocess.run(  # nosec B603 B607
             ["git", "clone", repo.url, str(destination)],
             text=True,
             capture_output=True,
@@ -438,7 +439,13 @@ def _run_gh_repo_list(target: str) -> tuple[DiscoveredRepo, ...]:
         "name,owner,url,defaultBranchRef,visibility,isArchived,isFork,description",
     ]
     try:
-        result = subprocess.run(command, text=True, capture_output=True, check=False)
+        # Bandit: fixed gh argv shape with shell=False.
+        result = subprocess.run(  # nosec B603
+            command,
+            text=True,
+            capture_output=True,
+            check=False,
+        )
     except OSError as exc:
         raise RepoDiscoveryError(f"failed to run gh: {exc}") from exc
 

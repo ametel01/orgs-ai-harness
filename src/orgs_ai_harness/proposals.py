@@ -5,7 +5,7 @@ from __future__ import annotations
 import hashlib
 import json
 import re
-import subprocess
+import subprocess  # nosec B404
 from dataclasses import dataclass
 from datetime import UTC, datetime
 from pathlib import Path
@@ -667,9 +667,11 @@ def _last_recorded_source_commit(root: Path, repo_id: str) -> str:
 
 
 def _current_source_commit(root: Path, entry: RepoEntry) -> str:
-    assert entry.local_path is not None
+    if entry.local_path is None:
+        raise ProposalError(f"repo {entry.id} has no local path; run 'harness repo set-path'")
     repo_path = (root / entry.local_path).resolve()
-    result = subprocess.run(
+    # Bandit: fixed git argv with shell=False.
+    result = subprocess.run(  # nosec B603 B607
         ["git", "rev-parse", "HEAD"],
         cwd=repo_path,
         text=True,

@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 import json
-import subprocess
+import subprocess  # nosec B404
 from dataclasses import dataclass
 from datetime import UTC, datetime
 from pathlib import Path
@@ -697,7 +697,8 @@ def _repo_source_commit(root: Path, entry: RepoEntry) -> str:
     if entry.local_path is None:
         return "unknown"
     repo_path = (root / entry.local_path).resolve()
-    result = subprocess.run(
+    # Bandit: fixed git argv with shell=False.
+    result = subprocess.run(  # nosec B603 B607
         ["git", "rev-parse", "HEAD"],
         cwd=repo_path,
         text=True,

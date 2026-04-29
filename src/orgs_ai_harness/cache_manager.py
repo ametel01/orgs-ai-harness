@@ -5,7 +5,7 @@ from __future__ import annotations
 import hashlib
 import json
 import shutil
-import subprocess
+import subprocess  # nosec B404
 from dataclasses import dataclass
 from pathlib import Path
 
@@ -256,7 +256,8 @@ def _write_export_metadata(
 
 
 def _resolve_repo_path(root: Path, entry: RepoEntry) -> Path:
-    assert entry.local_path is not None
+    if entry.local_path is None:
+        raise CacheManagerError(f"repo {entry.id} has no local path; refresh the registry before cache operations")
     repo_path = (root / entry.local_path).resolve()
     if not repo_path.exists():
         raise CacheManagerError(f"repo path does not exist: {repo_path}; repair it with 'harness repo set-path'")
@@ -296,7 +297,8 @@ def _source_pack_ref(entry: RepoEntry, approval: dict[str, object]) -> str:
 
 
 def _pack_commit_ref(root: Path, artifact_root: Path, approval: dict[str, object]) -> str:
-    result = subprocess.run(
+    # Bandit: fixed git argv with shell=False.
+    result = subprocess.run(  # nosec B603 B607
         ["git", "rev-parse", "HEAD"],
         cwd=root,
         text=True,
@@ -304,7 +306,8 @@ def _pack_commit_ref(root: Path, artifact_root: Path, approval: dict[str, object
         check=False,
     )
     if result.returncode == 0:
-        status_result = subprocess.run(
+        # Bandit: fixed git argv with shell=False.
+        status_result = subprocess.run(  # nosec B603 B607
             ["git", "status", "--porcelain", "--", str(artifact_root.relative_to(root))],
             cwd=root,
             text=True,

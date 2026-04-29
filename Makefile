@@ -23,6 +23,7 @@ verify: lint typecheck coverage
 
 security:
 	uv run pip-audit
+	uv run bandit -r src/orgs_ai_harness
 	uv run detect-secrets-hook --baseline .secrets.baseline $$(git ls-files)
 
 pre-commit:

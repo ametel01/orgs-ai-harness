@@ -5,7 +5,7 @@ from __future__ import annotations
 import json
 import re
 import shutil
-import subprocess
+import subprocess  # nosec B404
 from dataclasses import dataclass
 from pathlib import Path
 
@@ -295,7 +295,8 @@ def _raise_if_generation_would_overwrite_protected(root: Path, entry: RepoEntry)
 
 
 def _resolve_repo_path(root: Path, entry: RepoEntry) -> Path:
-    assert entry.local_path is not None
+    if entry.local_path is None:
+        raise RepoOnboardingError(f"repo {entry.id} has no local path; run 'harness repo set-path'")
     repo_path = (root / entry.local_path).resolve()
     if not repo_path.exists():
         raise RepoOnboardingError(f"repo path does not exist: {repo_path}; repair it with 'harness repo set-path'")
@@ -305,7 +306,8 @@ def _resolve_repo_path(root: Path, entry: RepoEntry) -> Path:
 
 
 def _repo_source_commit(repo_path: Path) -> str:
-    result = subprocess.run(
+    # Bandit: fixed git argv with shell=False.
+    result = subprocess.run(  # nosec B603 B607
         ["git", "rev-parse", "HEAD"],
         cwd=repo_path,
         text=True,

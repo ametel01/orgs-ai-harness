@@ -6,6 +6,7 @@ requires-python = ">=3.11"
 
 [dependency-groups]
 dev = [
+    "bandit[toml]>=1.9.4",
     "detect-secrets>=1.5.0",
     "hypothesis>=6.152.4",
     "pip-audit>=2.9.0",

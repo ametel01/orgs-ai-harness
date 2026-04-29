@@ -157,7 +157,8 @@ def _skill_triggers(path: Path) -> str:
 def _eval_state(artifact_root: Path) -> list[str]:
     evals = _load_json(artifact_root / "evals" / "onboarding.yml")
     report = _load_json(artifact_root / "eval-report.yml")
-    last_pass_rate = "unknown"
+    # Bandit: display placeholder, not a credential.
+    last_pass_rate = "unknown"  # nosec B105
     if report is not None:
         value = report.get("skill_pack_pass_rate")
         last_pass_rate = str(value) if isinstance(value, int | float) else "unknown"
