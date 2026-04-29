@@ -199,11 +199,12 @@ approve or verify a pack.
 
 ## Runtime Sessions
 
-Start the read-only runtime vertical slice:
+Start the runtime vertical slice. The default permission mode is read-only:
 
 ```sh
 uv run harness run "summarize this repo state"
 uv run harness run "summarize this repo state" --adapter fixture
+uv run harness run "summarize this repo state" --permission read-only
 ```
 
 The output includes a session id and JSONL log path under
@@ -227,12 +228,22 @@ ORGS_AI_HARNESS_CODEX_LOCAL_COMMAND="codex-local" \
   uv run harness run "summarize this repo state" --adapter codex-local
 ```
 
-Set `ORGS_AI_HARNESS_CODEX_LOCAL_TIMEOUT=<seconds>` when the default 30-second
-timeout is too long or too short for local diagnostics. The model-backed path is
-still read-only and returns a non-zero CLI status when the session ends with an
-adapter error, denied tool, or max-step diagnostic.
+Opt into workspace-write only for bounded local coding tasks:
 
-Inspect/resume a read-only session:
+```sh
+uv run harness run "update a file and validate it" --permission workspace-write
+ORGS_AI_HARNESS_CODEX_LOCAL_COMMAND="codex-local" \
+  uv run harness run "update a file and validate it" \
+    --adapter codex-local \
+    --permission workspace-write
+```
+
+Set `ORGS_AI_HARNESS_CODEX_LOCAL_TIMEOUT=<seconds>` when the default 30-second
+timeout is too long or too short for local diagnostics. The model-backed path
+returns a non-zero CLI status when the session ends with an adapter error,
+denied tool, or max-step diagnostic.
+
+Inspect/resume a session:
 
 ```sh
 uv run harness run --resume --session-id <session-id>
@@ -257,15 +268,28 @@ Common failures:
 - `codex-local adapter timed out`: raise
   `ORGS_AI_HARNESS_CODEX_LOCAL_TIMEOUT` or debug the local command directly.
 - `adapter-selected tool denied`: the adapter requested a tool or shell command
-  outside read-only permissions. This is expected for workspace-write,
-  destructive, network, deployment, and unknown operations.
+  outside the selected permission mode. Check the `tool_result.payload` for
+  `active_permission`, `required_permission`, and `reason`.
+- Denied write: rerun with `--permission workspace-write` when the write is
+  intentional. If the denial says `path is outside workspace` or
+  `path is protected`, choose a path under the workspace that is not a protected
+  generated pack path.
+- Denied high-risk shell command: destructive, network, deployment, git
+  push/pull/fetch/clone, and unknown command classes remain blocked in
+  workspace-write mode.
+- Failed validation command: inspect the `local.shell` tool result `stdout`,
+  `stderr`, and `exit_code`. A non-zero validation command is recorded as a
+  structured tool result rather than a runtime crash.
 
 Permission behavior is intentionally conservative. The CLI run path uses
-read-only mode. Workspace-write tools are available to tests and future runtime
-paths, but they deny writes outside the workspace and protected generated pack
-artifacts. Safe shell dispatch uses argv execution and denies destructive,
-network, deployment, and unknown command classes unless a future approval path
-adds broader permissions.
+read-only mode unless `--permission workspace-write` is passed. Workspace-write
+allows `local.write_file` under the workspace and known validation commands such
+as `make test`, `make verify`, `make lint`, `uv run pytest`, `uv run ruff`, and
+`uv run pyright`. Session logs record the selected permission mode in
+`session_started`, changed paths in write `tool_result` and observation payloads,
+and structured denied diagnostics. Full-access tools, approval prompts,
+rollback, sub-agents, broad shell access, network/deployment work, and
+autonomous deployment behavior remain deferred.
 
 ## Cache And Export
 

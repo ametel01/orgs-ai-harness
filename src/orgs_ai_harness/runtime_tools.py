@@ -14,6 +14,8 @@ from orgs_ai_harness.runtime_permissions import PermissionLevel, classify_comman
 
 JsonObject = dict[str, JsonValue]
 ToolCallable = Callable[[JsonObject, "ToolExecutionContext"], "ToolResult"]
+DEFAULT_TEXT_LIMIT = 8000
+DEFAULT_LIST_LIMIT = 200
 
 
 class RuntimeToolError(Exception):
@@ -92,7 +94,11 @@ class ToolRegistry:
                 ok=False,
                 tool_id=tool_id,
                 message=decision.reason,
-                payload={"required_permission": decision.required.value, "active_permission": decision.active.value},
+                payload={
+                    "required_permission": decision.required.value,
+                    "active_permission": decision.active.value,
+                    "reason": decision.reason,
+                },
                 denied=True,
             )
         return tool.handler(tool_input, context)
@@ -125,6 +131,33 @@ def default_tool_registry() -> ToolRegistry:
             input_schema={"type": "object", "properties": {"pattern": {"type": "string"}}},
             required_permission=PermissionLevel.READ_ONLY,
             handler=_search_text_tool,
+        )
+    )
+    registry.register(
+        RuntimeTool(
+            tool_id="local.read_file",
+            description="Read bounded UTF-8 text content from a file inside the workspace.",
+            input_schema={
+                "type": "object",
+                "properties": {"path": {"type": "string"}, "max_chars": {"type": "integer", "minimum": 1}},
+                "required": ["path"],
+                "additionalProperties": False,
+            },
+            required_permission=PermissionLevel.READ_ONLY,
+            handler=_read_file_tool,
+        )
+    )
+    registry.register(
+        RuntimeTool(
+            tool_id="local.list_files",
+            description="List workspace files deterministically with bounded results.",
+            input_schema={
+                "type": "object",
+                "properties": {"path": {"type": "string"}, "limit": {"type": "integer", "minimum": 1}},
+                "additionalProperties": False,
+            },
+            required_permission=PermissionLevel.READ_ONLY,
+            handler=_list_files_tool,
         )
     )
     registry.register(
@@ -202,6 +235,107 @@ def _search_text_tool(tool_input: JsonObject, context: ToolExecutionContext) -> 
     )
 
 
+def _read_file_tool(tool_input: JsonObject, context: ToolExecutionContext) -> ToolResult:
+    raw_path = tool_input.get("path")
+    if not isinstance(raw_path, str) or not raw_path:
+        raise RuntimeToolError("local.read_file requires non-empty string input: path")
+    max_chars = _positive_int(tool_input.get("max_chars"), DEFAULT_TEXT_LIMIT)
+    target = _resolve_workspace_path(context.workspace, raw_path)
+    if target is None:
+        return _denied_result(
+            "local.read_file",
+            "path is outside workspace",
+            context,
+            required=PermissionLevel.READ_ONLY,
+        )
+    workspace = context.workspace.resolve()
+    relative = target.relative_to(workspace).as_posix()
+    if _is_unsafe_read_path(relative):
+        return _denied_result("local.read_file", "path is protected", context, required=PermissionLevel.READ_ONLY)
+    if not target.is_file():
+        return ToolResult(
+            ok=False,
+            tool_id="local.read_file",
+            message="file does not exist",
+            payload={"path": relative},
+            exit_code=1,
+        )
+    try:
+        text = target.read_text(encoding="utf-8")
+    except UnicodeDecodeError:
+        return ToolResult(
+            ok=False,
+            tool_id="local.read_file",
+            message="file is not valid UTF-8 text",
+            payload={"path": relative},
+            exit_code=1,
+        )
+    content = _bounded(text, max_chars)
+    return ToolResult(
+        ok=True,
+        tool_id="local.read_file",
+        message="file read",
+        payload={
+            "path": relative,
+            "content": content,
+            "size": target.stat().st_size,
+            "truncated": len(content) != len(text),
+        },
+    )
+
+
+def _list_files_tool(tool_input: JsonObject, context: ToolExecutionContext) -> ToolResult:
+    raw_path = tool_input.get("path", ".")
+    if not isinstance(raw_path, str) or not raw_path:
+        raise RuntimeToolError("local.list_files requires string input: path when provided")
+    limit = _positive_int(tool_input.get("limit"), DEFAULT_LIST_LIMIT)
+    root = _resolve_workspace_path(context.workspace, raw_path)
+    if root is None:
+        return _denied_result(
+            "local.list_files",
+            "path is outside workspace",
+            context,
+            required=PermissionLevel.READ_ONLY,
+        )
+    workspace = context.workspace.resolve()
+    relative_root = root.relative_to(workspace).as_posix()
+    if relative_root == ".":
+        relative_root = ""
+    if _is_unsafe_read_path(relative_root):
+        return _denied_result("local.list_files", "path is protected", context, required=PermissionLevel.READ_ONLY)
+    if not root.exists():
+        return ToolResult(
+            ok=False,
+            tool_id="local.list_files",
+            message="path does not exist",
+            payload={"path": relative_root or "."},
+            exit_code=1,
+        )
+    candidates = [root] if root.is_file() else sorted(path for path in root.rglob("*") if path.is_file())
+    files: list[str] = []
+    skipped_protected = 0
+    for path in candidates:
+        relative = path.relative_to(workspace).as_posix()
+        if _is_unsafe_read_path(relative):
+            skipped_protected += 1
+            continue
+        if len(files) >= limit:
+            break
+        files.append(relative)
+    visible_count = max(0, len(candidates) - skipped_protected)
+    return ToolResult(
+        ok=True,
+        tool_id="local.list_files",
+        message=f"listed {len(files)} file(s)",
+        payload={
+            "path": relative_root or ".",
+            "files": cast(JsonValue, files),
+            "truncated": visible_count > len(files),
+            "limit": limit,
+        },
+    )
+
+
 def _shell_tool(tool_input: JsonObject, context: ToolExecutionContext) -> ToolResult:
     argv = tool_input.get("argv")
     if not isinstance(argv, list) or not all(isinstance(part, str) and part for part in argv):
@@ -210,12 +344,12 @@ def _shell_tool(tool_input: JsonObject, context: ToolExecutionContext) -> ToolRe
     required = classify_command(command_argv)
     decision = permission_allows(context.permission_mode, required)
     if not decision.allowed:
-        return ToolResult(
-            ok=False,
-            tool_id="local.shell",
-            message=decision.reason,
-            payload={"argv": cast(JsonValue, command_argv), "required_permission": required.value},
-            denied=True,
+        return _denied_result(
+            "local.shell",
+            decision.reason,
+            context,
+            required=required,
+            payload={"argv": cast(JsonValue, command_argv)},
         )
     result = subprocess.run(  # nosec B603
         command_argv,
@@ -243,13 +377,23 @@ def _write_file_tool(tool_input: JsonObject, context: ToolExecutionContext) -> T
         raise RuntimeToolError("local.write_file requires non-empty string input: path")
     if not isinstance(content, str):
         raise RuntimeToolError("local.write_file requires string input: content")
-    target = (context.workspace / raw_path).resolve()
+    target = _resolve_workspace_path(context.workspace, raw_path)
+    if target is None:
+        return _denied_result(
+            "local.write_file",
+            "path is outside workspace",
+            context,
+            required=PermissionLevel.WORKSPACE_WRITE,
+        )
     workspace = context.workspace.resolve()
-    if not _is_relative_to(target, workspace):
-        return ToolResult(ok=False, tool_id="local.write_file", message="path is outside workspace", denied=True)
     relative = target.relative_to(workspace).as_posix()
-    if relative.startswith("org-agent-skills/repos/") or relative.startswith(".git/"):
-        return ToolResult(ok=False, tool_id="local.write_file", message="path is protected", denied=True)
+    if _is_write_protected_path(relative):
+        return _denied_result(
+            "local.write_file",
+            "path is protected",
+            context,
+            required=PermissionLevel.WORKSPACE_WRITE,
+        )
     before_exists = target.exists()
     before_size = target.stat().st_size if before_exists else None
     target.parent.mkdir(parents=True, exist_ok=True)
@@ -272,6 +416,52 @@ def _bounded(text: str, limit: int = 8000) -> str:
     if len(text) <= limit:
         return text
     return text[:limit] + "\n[output truncated]\n"
+
+
+def _positive_int(value: JsonValue | None, default: int) -> int:
+    if value is None:
+        return default
+    if isinstance(value, int) and value > 0:
+        return value
+    raise RuntimeToolError("limit values must be positive integers")
+
+
+def _resolve_workspace_path(workspace: Path, raw_path: str) -> Path | None:
+    target = (workspace / raw_path).resolve()
+    workspace = workspace.resolve()
+    if not _is_relative_to(target, workspace):
+        return None
+    return target
+
+
+def _is_unsafe_read_path(relative_path: str) -> bool:
+    if relative_path in {"", "."}:
+        return False
+    parts = Path(relative_path).parts
+    return ".git" in parts
+
+
+def _is_write_protected_path(relative_path: str) -> bool:
+    return _is_unsafe_read_path(relative_path) or relative_path.startswith("org-agent-skills/repos/")
+
+
+def _denied_result(
+    tool_id: str,
+    message: str,
+    context: ToolExecutionContext,
+    *,
+    required: PermissionLevel,
+    payload: JsonObject | None = None,
+) -> ToolResult:
+    diagnostic: JsonObject = dict(payload or {})
+    diagnostic.update(
+        {
+            "active_permission": context.permission_mode.value,
+            "required_permission": required.value,
+            "reason": message,
+        }
+    )
+    return ToolResult(ok=False, tool_id=tool_id, message=message, payload=diagnostic, denied=True)
 
 
 def _is_relative_to(path: Path, parent: Path) -> bool:

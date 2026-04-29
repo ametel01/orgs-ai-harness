@@ -1,4 +1,4 @@
-"""Adapter contracts for the read-only runtime loop."""
+"""Adapter contracts for the runtime loop."""
 
 from __future__ import annotations
 
@@ -109,12 +109,12 @@ def assemble_runtime_prompt(
     skill_budget_chars: int = 4000,
     observation_budget_chars: int = 6000,
 ) -> str:
-    """Build a deterministic provider-neutral prompt for a read-only adapter."""
+    """Build a deterministic provider-neutral prompt for a runtime adapter."""
 
     sections = [
         (
             "instructions",
-            "You are choosing the next decision for a read-only runtime session.\n"
+            "You are choosing the next decision for a bounded runtime session.\n"
             "Return exactly one JSON object with either type=tool_call or type=final_response.\n"
             "For tool_call, include tool_id and tool_input. For final_response, include summary.\n"
             "Do not request tools outside the supplied catalog or outside the active permission mode.",

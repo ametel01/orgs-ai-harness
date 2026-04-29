@@ -41,15 +41,17 @@ def run_read_only_session(
     goal: str,
     *,
     adapter: RuntimeAdapter | None = None,
+    permission_mode: PermissionLevel = PermissionLevel.READ_ONLY,
     max_steps: int = 8,
     session_root: Path | None = None,
     session_id: str | None = None,
     tool_registry: ToolRegistry | None = None,
 ) -> RuntimeRunResult:
     workspace = workspace.resolve()
+    permission_mode = PermissionLevel(permission_mode)
     store = RuntimeSessionStore(session_root or workspace / ".agent-harness" / "sessions")
     session_id = session_id or store.create_session_id()
-    context = ToolExecutionContext(cwd=workspace, workspace=workspace, permission_mode=PermissionLevel.READ_ONLY)
+    context = ToolExecutionContext(cwd=workspace, workspace=workspace, permission_mode=permission_mode)
     registry = tool_registry or default_tool_registry()
     dispatcher = HookedToolDispatcher(registry)
     adapter = adapter or FixtureRuntimeAdapter(
@@ -62,7 +64,13 @@ def run_read_only_session(
     if max_steps < 1:
         raise RuntimeAdapterError("max_steps must be at least 1")
 
-    store.append_event(session_id, "session_started", {"goal": goal}, cwd=workspace, workspace=workspace)
+    store.append_event(
+        session_id,
+        "session_started",
+        {"goal": goal, "permission_mode": permission_mode.value},
+        cwd=workspace,
+        workspace=workspace,
+    )
     runtime_context = assemble_runtime_context(workspace)
     store.append_event(
         session_id,
@@ -82,7 +90,7 @@ def run_read_only_session(
             tools=tool_catalog,
             skill_catalog=skill_catalog,
             observations=tuple(observations),
-            permission_mode=PermissionLevel.READ_ONLY.value,
+            permission_mode=permission_mode.value,
         )
         try:
             decision = coerce_adapter_decision(adapter.decide(adapter_input))

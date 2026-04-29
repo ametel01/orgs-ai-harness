@@ -31,7 +31,13 @@ from orgs_ai_harness.runtime_hooks import HookedToolDispatcher, ToolHookContext,
 from orgs_ai_harness.runtime_permissions import PermissionError, PermissionLevel, classify_command, permission_allows
 from orgs_ai_harness.runtime_recovery import summarize_recovery
 from orgs_ai_harness.runtime_runner import run_read_only_session
-from orgs_ai_harness.runtime_tools import ToolExecutionContext, ToolRegistry, ToolResult, default_tool_registry
+from orgs_ai_harness.runtime_tools import (
+    RuntimeTool,
+    ToolExecutionContext,
+    ToolRegistry,
+    ToolResult,
+    default_tool_registry,
+)
 
 
 class RuntimeAdapterContractTests(unittest.TestCase):
@@ -323,6 +329,16 @@ class RuntimeToolTests(unittest.TestCase):
             self.assertEqual(result.to_json()["tool_id"], "local.cwd")
             self.assertIn("local.git_status", {tool.tool_id for tool in registry.list_tools()})
 
+    def test_catalog_exposes_read_list_and_workspace_write_metadata(self) -> None:
+        registry = default_tool_registry()
+        tools = {tool.tool_id: tool for tool in registry.list_tools()}
+
+        self.assertEqual(tools["local.read_file"].required_permission, PermissionLevel.READ_ONLY)
+        self.assertEqual(tools["local.list_files"].required_permission, PermissionLevel.READ_ONLY)
+        self.assertEqual(tools["local.write_file"].required_permission, PermissionLevel.WORKSPACE_WRITE)
+        self.assertIn("path", cast(dict[str, object], tools["local.read_file"].input_schema["properties"]))
+        self.assertIn("limit", cast(dict[str, object], tools["local.list_files"].input_schema["properties"]))
+
     def test_unknown_tool_and_invalid_inputs_fail_clearly(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
             registry = default_tool_registry()
@@ -335,6 +351,56 @@ class RuntimeToolTests(unittest.TestCase):
             with self.assertRaises(Exception) as invalid:
                 registry.dispatch("local.search_text", {}, context)
             self.assertIn("pattern", str(invalid.exception))
+
+    def test_read_file_success_missing_outside_workspace_and_truncation(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            workspace = Path(tmp)
+            (workspace / "notes.txt").write_text("hello world", encoding="utf-8")
+            (workspace / "large.txt").write_text("x" * 40, encoding="utf-8")
+            generated = workspace / "org-agent-skills" / "repos" / "sample"
+            generated.mkdir(parents=True)
+            (generated / "unknowns.yml").write_text("unknowns: []\n", encoding="utf-8")
+            registry = default_tool_registry()
+            context = ToolExecutionContext(cwd=workspace, workspace=workspace)
+
+            read = registry.dispatch("local.read_file", {"path": "notes.txt"}, context)
+            read_generated = registry.dispatch(
+                "local.read_file",
+                {"path": "org-agent-skills/repos/sample/unknowns.yml"},
+                context,
+            )
+            missing = registry.dispatch("local.read_file", {"path": "missing.txt"}, context)
+            outside = registry.dispatch("local.read_file", {"path": "../outside.txt"}, context)
+            truncated = registry.dispatch("local.read_file", {"path": "large.txt", "max_chars": 12}, context)
+
+            self.assertTrue(read.ok)
+            self.assertEqual(read.payload["path"], "notes.txt")
+            self.assertEqual(read.payload["content"], "hello world")
+            self.assertTrue(read_generated.ok)
+            self.assertFalse(missing.ok)
+            self.assertTrue(outside.denied)
+            self.assertEqual(outside.payload["active_permission"], "read-only")
+            self.assertTrue(truncated.payload["truncated"])
+            self.assertIn("[output truncated]", cast(str, truncated.payload["content"]))
+
+    def test_list_files_is_deterministic_bounded_and_workspace_scoped(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            workspace = Path(tmp)
+            (workspace / "b").mkdir()
+            (workspace / "b" / "two.txt").write_text("2", encoding="utf-8")
+            (workspace / "a.txt").write_text("1", encoding="utf-8")
+            (workspace / ".git").mkdir()
+            (workspace / ".git" / "config").write_text("secret", encoding="utf-8")
+            registry = default_tool_registry()
+            context = ToolExecutionContext(cwd=workspace, workspace=workspace)
+
+            listed = registry.dispatch("local.list_files", {"limit": 1}, context)
+            outside = registry.dispatch("local.list_files", {"path": "../outside"}, context)
+
+            self.assertTrue(listed.ok)
+            self.assertEqual(listed.payload["files"], ["a.txt"])
+            self.assertTrue(listed.payload["truncated"])
+            self.assertTrue(outside.denied)
 
     def test_permission_denials_are_explicit_and_malformed_permissions_fail(self) -> None:
         decision = permission_allows(PermissionLevel.READ_ONLY, PermissionLevel.WORKSPACE_WRITE)
@@ -356,6 +422,8 @@ class RuntimeToolTests(unittest.TestCase):
             result = registry.dispatch("local.write_file", {"path": "x.txt", "content": "x"}, context)
 
             self.assertTrue(result.denied)
+            self.assertEqual(result.payload["active_permission"], "read-only")
+            self.assertEqual(result.payload["required_permission"], "workspace-write")
             self.assertFalse((Path(tmp) / "x.txt").exists())
 
     def test_shell_classification_executes_allowed_commands_and_denies_risky_commands(self) -> None:
@@ -373,6 +441,8 @@ class RuntimeToolTests(unittest.TestCase):
             self.assertEqual(classify_command(["pwd"]), PermissionLevel.READ_ONLY)
             self.assertTrue(allowed.ok)
             self.assertTrue(denied.denied)
+            self.assertEqual(denied.payload["active_permission"], "read-only")
+            self.assertEqual(denied.payload["required_permission"], "high-risk")
 
     def test_shell_failure_is_structured(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
@@ -388,6 +458,41 @@ class RuntimeToolTests(unittest.TestCase):
             self.assertFalse(result.ok)
             self.assertNotEqual(result.exit_code, 0)
             self.assertIn("missing", result.stderr)
+
+    def test_workspace_write_shell_allows_validation_and_denies_unknown_or_high_risk(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            workspace = Path(tmp)
+            registry = default_tool_registry()
+            read_only = ToolExecutionContext(
+                cwd=workspace, workspace=workspace, permission_mode=PermissionLevel.READ_ONLY
+            )
+            workspace_write = ToolExecutionContext(
+                cwd=workspace,
+                workspace=workspace,
+                permission_mode=PermissionLevel.WORKSPACE_WRITE,
+            )
+
+            read_only_denied = registry.dispatch(
+                "local.shell",
+                {"argv": ["python", "-m", "py_compile", "missing.py"]},
+                read_only,
+            )
+            failed_validation = registry.dispatch(
+                "local.shell",
+                {"argv": ["python", "-m", "py_compile", "missing.py"]},
+                workspace_write,
+            )
+            unknown = registry.dispatch("local.shell", {"argv": ["unknown-local-command"]}, workspace_write)
+            high_risk = registry.dispatch("local.shell", {"argv": ["git", "push"]}, workspace_write)
+
+            self.assertEqual(classify_command(["make", "verify"]), PermissionLevel.WORKSPACE_WRITE)
+            self.assertTrue(read_only_denied.denied)
+            self.assertEqual(read_only_denied.payload["required_permission"], "workspace-write")
+            self.assertFalse(failed_validation.ok)
+            self.assertFalse(failed_validation.denied)
+            self.assertIsNotNone(failed_validation.exit_code)
+            self.assertTrue(unknown.denied)
+            self.assertTrue(high_risk.denied)
 
     def test_workspace_write_checks_boundaries_and_protected_artifacts(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
@@ -409,6 +514,7 @@ class RuntimeToolTests(unittest.TestCase):
             self.assertTrue(written.ok)
             self.assertEqual(written.changed_files, ("notes/run.txt",))
             self.assertTrue(outside.denied)
+            self.assertEqual(outside.payload["active_permission"], "workspace-write")
             self.assertTrue(protected.denied)
 
 
@@ -543,6 +649,50 @@ class RuntimeContextAndLoopTests(unittest.TestCase):
             self.assertEqual(event_types[-1], "final_response")
             self.assertEqual(len(adapter.received_observations), 1)
 
+    def test_run_loop_records_permission_mode_changed_files_and_denied_diagnostics(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            workspace = Path(tmp)
+            adapter = FixtureRuntimeAdapter(
+                [
+                    ToolCallDecision("local.write_file", {"path": "notes.txt", "content": "ok"}),
+                    FinalResponseDecision("done"),
+                ]
+            )
+
+            result = run_read_only_session(
+                workspace,
+                "write a note",
+                adapter=adapter,
+                permission_mode=PermissionLevel.WORKSPACE_WRITE,
+                session_id="workspace-write",
+            )
+            denied = run_read_only_session(
+                workspace,
+                "try risky shell",
+                adapter=FixtureRuntimeAdapter(
+                    [ToolCallDecision("local.shell", {"argv": ["git", "push"]})],
+                ),
+                permission_mode=PermissionLevel.WORKSPACE_WRITE,
+                session_id="denied-shell",
+            )
+            store = RuntimeSessionStore(workspace / ".agent-harness" / "sessions")
+            events = store.read_session("workspace-write").events
+            denied_events = store.read_session("denied-shell").events
+            tool_result = next(event for event in events if event.event_type == "tool_result")
+            observation = next(event for event in events if event.event_type == "adapter_observation")
+            denied_result = next(event for event in denied_events if event.event_type == "tool_result")
+
+            self.assertTrue(result.ok)
+            self.assertFalse(denied.ok)
+            self.assertEqual(events[0].payload["permission_mode"], "workspace-write")
+            self.assertEqual(tool_result.payload["changed_files"], ["notes.txt"])
+            observation_result = cast(dict[str, object], observation.payload["result"])
+            self.assertEqual(observation_result["changed_files"], ["notes.txt"])
+            self.assertTrue(denied_result.payload["denied"])
+            denied_payload = cast(dict[str, object], denied_result.payload["payload"])
+            self.assertEqual(denied_payload["active_permission"], "workspace-write")
+            self.assertEqual(denied_payload["required_permission"], "high-risk")
+
     def test_denied_tool_max_steps_malformed_decision_and_adapter_exception_are_logged(self) -> None:
         class MalformedAdapter:
             def decide(self, adapter_input: RuntimeAdapterInput) -> object:
@@ -599,6 +749,81 @@ class RuntimeContextAndLoopTests(unittest.TestCase):
             self.assertIn("unknown runtime tool", unknown.summary)
             self.assertTrue(any(event.event_type == "error" for event in store.read_session("exploded").events))
 
+    def test_workspace_write_coding_task_vertical_slice(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            workspace = Path(tmp)
+            (workspace / "source.py").write_text("VALUE = 1\n", encoding="utf-8")
+            adapter = FixtureRuntimeAdapter(
+                [
+                    ToolCallDecision("local.list_files", {}),
+                    ToolCallDecision("local.read_file", {"path": "source.py"}),
+                    ToolCallDecision("local.write_file", {"path": "generated.py", "content": "VALUE = 2\n"}),
+                    ToolCallDecision("local.shell", {"argv": ["python", "-m", "py_compile", "generated.py"]}),
+                    FinalResponseDecision("generated and validated"),
+                ]
+            )
+
+            result = run_read_only_session(
+                workspace,
+                "create a generated module and validate it",
+                adapter=adapter,
+                permission_mode=PermissionLevel.WORKSPACE_WRITE,
+                session_id="vertical-slice",
+            )
+            events = (
+                RuntimeSessionStore(workspace / ".agent-harness" / "sessions").read_session("vertical-slice").events
+            )
+            event_types = [event.event_type for event in events]
+            tool_results = [event for event in events if event.event_type == "tool_result"]
+            shell_result = next(event for event in tool_results if event.payload["tool_id"] == "local.shell")
+            write_result = next(event for event in tool_results if event.payload["tool_id"] == "local.write_file")
+
+            self.assertTrue(result.ok)
+            self.assertEqual((workspace / "generated.py").read_text(encoding="utf-8"), "VALUE = 2\n")
+            self.assertEqual(shell_result.payload["exit_code"], 0)
+            self.assertIn("stdout", shell_result.payload)
+            self.assertIn("stderr", shell_result.payload)
+            self.assertEqual(write_result.payload["changed_files"], ["generated.py"])
+            self.assertEqual(event_types[-1], "final_response")
+            self.assertEqual(event_types.count("adapter_decision"), 5)
+            self.assertEqual(event_types.count("adapter_observation"), 4)
+            self.assertLess(event_types.index("tool_call"), event_types.index("tool_result"))
+
+    def test_workspace_write_runtime_denies_full_access_tool(self) -> None:
+        registry = default_tool_registry()
+        registry.register(
+            RuntimeTool(
+                tool_id="local.full_access_fixture",
+                description="fixture",
+                input_schema={},
+                required_permission=PermissionLevel.FULL_ACCESS,
+                handler=lambda tool_input, context: ToolResult(
+                    ok=True,
+                    tool_id="local.full_access_fixture",
+                    message="ok",
+                ),
+            )
+        )
+        with tempfile.TemporaryDirectory() as tmp:
+            workspace = Path(tmp)
+            result = run_read_only_session(
+                workspace,
+                "try full access",
+                adapter=FixtureRuntimeAdapter([ToolCallDecision("local.full_access_fixture", {})]),
+                permission_mode=PermissionLevel.WORKSPACE_WRITE,
+                session_id="full-access-denied",
+                tool_registry=registry,
+            )
+            events = (
+                RuntimeSessionStore(workspace / ".agent-harness" / "sessions").read_session("full-access-denied").events
+            )
+            tool_result = next(event for event in events if event.event_type == "tool_result")
+            payload = cast(dict[str, object], tool_result.payload["payload"])
+
+            self.assertFalse(result.ok)
+            self.assertEqual(payload["active_permission"], "workspace-write")
+            self.assertEqual(payload["required_permission"], "full-access")
+
     def test_codex_local_path_preserves_read_only_safety_boundaries(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
             workspace = Path(tmp)
@@ -653,6 +878,60 @@ class RuntimeContextAndLoopTests(unittest.TestCase):
             unknown_events = store.read_session("unknown-tool").events
             self.assertEqual(unknown_events[-2].event_type, "error")
             self.assertEqual(unknown_events[-1].event_type, "final_response")
+
+    def test_codex_local_workspace_write_executes_write_and_denies_boundaries(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            workspace = Path(tmp)
+
+            written = run_read_only_session(
+                workspace,
+                "write file",
+                adapter=self.codex_local_adapter(
+                    ['{"type":"tool_call","tool_id":"local.write_file","tool_input":{"path":"x.txt","content":"x"}}']
+                ),
+                permission_mode=PermissionLevel.WORKSPACE_WRITE,
+                session_id="codex-write",
+            )
+            read_only_denied = run_read_only_session(
+                workspace,
+                "try write",
+                adapter=self.codex_local_adapter(
+                    ['{"type":"tool_call","tool_id":"local.write_file","tool_input":{"path":"ro.txt","content":"x"}}']
+                ),
+                session_id="codex-read-only-denied",
+            )
+            outside_denied = run_read_only_session(
+                workspace,
+                "try outside",
+                adapter=self.codex_local_adapter(
+                    ['{"type":"tool_call","tool_id":"local.write_file","tool_input":{"path":"../x.txt","content":"x"}}']
+                ),
+                permission_mode=PermissionLevel.WORKSPACE_WRITE,
+                session_id="codex-outside-denied",
+            )
+            protected_denied = run_read_only_session(
+                workspace,
+                "try protected",
+                adapter=self.codex_local_adapter(
+                    [
+                        '{"type":"tool_call","tool_id":"local.write_file",'
+                        '"tool_input":{"path":"org-agent-skills/repos/x/unknowns.yml","content":"x"}}'
+                    ]
+                ),
+                permission_mode=PermissionLevel.WORKSPACE_WRITE,
+                session_id="codex-protected-denied",
+            )
+            store = RuntimeSessionStore(workspace / ".agent-harness" / "sessions")
+            write_events = store.read_session("codex-write").events
+            write_result = next(event for event in write_events if event.event_type == "tool_result")
+
+            self.assertTrue(written.ok)
+            self.assertEqual((workspace / "x.txt").read_text(encoding="utf-8"), "x")
+            self.assertEqual(write_result.payload["changed_files"], ["x.txt"])
+            self.assertFalse(read_only_denied.ok)
+            self.assertFalse((workspace / "ro.txt").exists())
+            self.assertFalse(outside_denied.ok)
+            self.assertFalse(protected_denied.ok)
 
     def test_cli_codex_local_uses_fake_subprocess_for_success_and_failures(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
@@ -779,6 +1058,60 @@ class RuntimeContextAndLoopTests(unittest.TestCase):
                 capture_output=True,
                 check=False,
             )
+            explicit_read_only_result = subprocess.run(
+                [
+                    sys.executable,
+                    "-m",
+                    "orgs_ai_harness",
+                    "run",
+                    "summarize this repo state",
+                    "--permission",
+                    "read-only",
+                    "--session-id",
+                    "session-permission-read",
+                ],
+                cwd=workspace,
+                env=self.cli_env(),
+                text=True,
+                capture_output=True,
+                check=False,
+            )
+            workspace_write_result = subprocess.run(
+                [
+                    sys.executable,
+                    "-m",
+                    "orgs_ai_harness",
+                    "run",
+                    "summarize this repo state",
+                    "--permission",
+                    "workspace-write",
+                    "--session-id",
+                    "session-permission-write",
+                ],
+                cwd=workspace,
+                env=self.cli_env(),
+                text=True,
+                capture_output=True,
+                check=False,
+            )
+            invalid_permission_result = subprocess.run(
+                [
+                    sys.executable,
+                    "-m",
+                    "orgs_ai_harness",
+                    "run",
+                    "summarize this repo state",
+                    "--permission",
+                    "full-access",
+                    "--session-id",
+                    "session-permission-invalid",
+                ],
+                cwd=workspace,
+                env=self.cli_env(),
+                text=True,
+                capture_output=True,
+                check=False,
+            )
             invalid_adapter_result = subprocess.run(
                 [
                     sys.executable,
@@ -805,6 +1138,16 @@ class RuntimeContextAndLoopTests(unittest.TestCase):
             self.assertIn("Resumed session session-a", resume_result.stdout)
             self.assertEqual(explicit_fixture_result.returncode, 0, explicit_fixture_result.stderr)
             self.assertIn("Session: session-b", explicit_fixture_result.stdout)
+            self.assertEqual(explicit_read_only_result.returncode, 0, explicit_read_only_result.stderr)
+            self.assertEqual(workspace_write_result.returncode, 0, workspace_write_result.stderr)
+            store = RuntimeSessionStore(workspace / ".agent-harness" / "sessions")
+            read_events = store.read_session("session-permission-read").events
+            write_events = store.read_session("session-permission-write").events
+            self.assertEqual(read_events[0].payload["permission_mode"], "read-only")
+            self.assertEqual(write_events[0].payload["permission_mode"], "workspace-write")
+            self.assertNotEqual(invalid_permission_result.returncode, 0)
+            self.assertIn("invalid choice", invalid_permission_result.stderr)
+            self.assertFalse((workspace / ".agent-harness" / "sessions" / "session-permission-invalid.jsonl").exists())
             self.assertNotEqual(invalid_adapter_result.returncode, 0)
             self.assertIn("unsupported runtime adapter: missing", invalid_adapter_result.stderr)
             self.assertFalse((workspace / ".agent-harness" / "sessions" / "session-c.jsonl").exists())
@@ -854,9 +1197,7 @@ class RuntimeHookTests(unittest.TestCase):
     def test_registry_can_host_full_access_tool_denied_by_read_only(self) -> None:
         registry = ToolRegistry()
         registry.register(
-            runtime_tool := default_tool_registry()
-            .get("local.cwd")
-            .__class__(
+            runtime_tool := RuntimeTool(
                 tool_id="local.full_access_fixture",
                 description="fixture",
                 input_schema={},

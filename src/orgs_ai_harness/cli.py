@@ -52,6 +52,7 @@ from orgs_ai_harness.repo_registry import (
 )
 from orgs_ai_harness.runtime_adapter import CodexLocalRuntimeAdapter, RuntimeAdapter
 from orgs_ai_harness.runtime_events import RuntimeEventError
+from orgs_ai_harness.runtime_permissions import PermissionLevel
 from orgs_ai_harness.runtime_runner import resume_read_only_session, run_read_only_session
 from orgs_ai_harness.runtime_tools import RuntimeToolError
 from orgs_ai_harness.validation import validate_org_pack, validate_repo_onboarding
@@ -80,13 +81,19 @@ def build_parser() -> argparse.ArgumentParser:
         "--skill-target", choices=("codex", "claude", "both"), help="Where to install generated skills"
     )
 
-    run_parser = subparsers.add_parser("run", help="Start or resume a read-only runtime session")
+    run_parser = subparsers.add_parser("run", help="Start or resume a runtime session")
     run_parser.add_argument("goal", nargs="?", help="Goal for a new runtime session")
     run_parser.add_argument("--session-root", help="Directory containing runtime session JSONL logs")
     run_parser.add_argument("--session-id", help="Explicit session id for deterministic tests or resume")
-    run_parser.add_argument("--resume", action="store_true", help="Resume/inspect an existing read-only session")
+    run_parser.add_argument("--resume", action="store_true", help="Resume/inspect an existing runtime session")
     run_parser.add_argument(
         "--adapter", default="fixture", help="Runtime adapter for new sessions: fixture or codex-local"
+    )
+    run_parser.add_argument(
+        "--permission",
+        choices=(PermissionLevel.READ_ONLY.value, PermissionLevel.WORKSPACE_WRITE.value),
+        default=PermissionLevel.READ_ONLY.value,
+        help="Runtime permission mode for new sessions: read-only or workspace-write",
     )
 
     org_parser = subparsers.add_parser("org", help="Manage org skill packs")
@@ -283,6 +290,7 @@ def _handle_run_command(args: argparse.Namespace) -> int:
         Path.cwd(),
         args.goal,
         adapter=adapter,
+        permission_mode=PermissionLevel(args.permission),
         session_root=session_root,
         session_id=args.session_id,
     )

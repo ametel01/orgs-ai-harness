@@ -176,11 +176,13 @@ uv run harness export generic <repo-id> --development
 
 ## Runtime Session Slice
 
-Run the current read-only runtime loop from a workspace:
+Run the current runtime loop from a workspace. Sessions are read-only unless
+`--permission workspace-write` is passed:
 
 ```sh
 uv run harness run "summarize this repo state"
 uv run harness run "summarize this repo state" --adapter fixture
+uv run harness run "inspect only" --permission read-only
 ```
 
 The command starts a persisted session, assembles bounded context, and asks the
@@ -189,6 +191,25 @@ decisions. Use `--adapter fixture` to select that adapter explicitly. It prints
 the session id and log path. Logs are written as JSONL under
 `.agent-harness/sessions/` and include adapter decisions, observations, tool
 calls, tool results, errors, and final responses.
+
+Use workspace-write only when the adapter should be allowed to write files under
+the current workspace and run known local validation commands:
+
+```sh
+uv run harness run "update a file and validate it" --permission workspace-write
+ORGS_AI_HARNESS_CODEX_LOCAL_COMMAND="codex-local" \
+  uv run harness run "update a file and validate it" \
+    --adapter codex-local \
+    --permission workspace-write
+```
+
+Workspace-write sessions can use `local.write_file` inside the workspace and
+`local.shell` for known validation commands such as `make test`, `make verify`,
+`make lint`, `uv run pytest`, `uv run ruff`, and `uv run pyright`. Read/list
+inspection tools remain available in both modes. Writes outside the workspace,
+protected generated pack paths, full-access tools, destructive commands,
+network/deployment commands, git network commands, and unknown shell commands
+are denied and logged with active and required permission metadata.
 
 Use the local subprocess-backed adapter when you have a compatible command that
 reads the assembled prompt from stdin and writes exactly one JSON decision to
@@ -200,21 +221,23 @@ ORGS_AI_HARNESS_CODEX_LOCAL_COMMAND="codex-local" \
 ```
 
 Set `ORGS_AI_HARNESS_CODEX_LOCAL_TIMEOUT=<seconds>` to override the default
-30-second subprocess timeout. `codex-local` receives the same read-only
-permission mode as the fixture adapter. It can request allowed inspection tools
-or return a final response; workspace writes, destructive shell commands,
-network/deployment commands, and unknown tools are denied and logged.
+30-second subprocess timeout. `codex-local` receives the selected permission
+mode. It can request allowed tools or return a final response; denied tools and
+commands end the session with a non-zero CLI status and a structured diagnostic.
 
-Inspect or resume an existing read-only session:
+Inspect or resume an existing session:
 
 ```sh
 uv run harness run --resume --session-id <session-id>
 ```
 
 Malformed model output, missing executables, non-zero subprocess exits, stderr,
-timeouts, max-step stops, and denied tools are surfaced in the final diagnostic
-summary and written as `error` events. Write sessions, approvals, sub-agents,
-and context compression remain deferred.
+timeouts, max-step stops, failed validation commands, and denied tools are
+surfaced in the final diagnostic summary and written as session events. Logs
+also record the selected permission mode and changed-file metadata from
+successful writes. Approval prompts, full-access execution, broad autonomous
+shell/network/deployment behavior, rollback, sub-agents, and context compression
+remain deferred.
 
 ## Proposals And Refresh
 

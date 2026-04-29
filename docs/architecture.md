@@ -80,12 +80,14 @@ safety policy become runtime subsystems rather than the whole product boundary.
 
 ## Implemented Runtime Slice
 
-`harness run <goal>` is adapter-driven, local, and read-only. The default CLI
-path uses a deterministic fixture-style adapter. `--adapter codex-local` can
-call a configured local subprocess that reads the assembled prompt on stdin and
-returns exactly one strict JSON decision on stdout. Neither path spawns
-sub-agents or makes autonomous edits. The slice proves the runtime contracts
-that later write-capable loops will use:
+`harness run <goal>` is adapter-driven and local. It runs in `read-only` mode by
+default; `--permission workspace-write` is an explicit opt-in for bounded local
+file writes and known validation commands. The default CLI path uses a
+deterministic fixture-style adapter. `--adapter codex-local` can call a
+configured local subprocess that reads the assembled prompt on stdin and returns
+exactly one strict JSON decision on stdout. Neither path spawns sub-agents,
+requests approval prompts, performs network/deployment work, or grants
+full-access execution. The slice proves these runtime contracts:
 
 - session logs are append-only JSONL files under `.agent-harness/sessions/`
 - events include session ids, event ids, timestamps, event type, cwd/workspace
@@ -101,13 +103,15 @@ that later write-capable loops will use:
   final human-readable response
 - the tool registry exposes typed tool metadata, permission requirements, and
   structured `ToolResult` payloads
-- read-only mode can inspect cwd, git status, and text search results
+- read-only mode can inspect cwd, git status, bounded file contents,
+  deterministic file listings, and text search results
 - safe shell dispatch uses argv execution and conservative command risk
-  classification; destructive, network, deployment, and unknown command classes
-  are denied without higher permission support
-- workspace-write file tools exist behind explicit `workspace-write`
-  permission, enforce workspace boundaries, reject protected generated pack
-  paths, and report changed paths for audit
+  classification; known validation commands require `workspace-write`, while
+  destructive, network, deployment, git network, and unknown command classes are
+  denied
+- workspace-write file tools are available only behind explicit
+  `workspace-write` permission, enforce workspace boundaries, reject protected
+  generated pack paths, and report changed paths for audit
 - pre-tool hooks can deny dispatch and post-tool hooks can attach warnings or
   audit metadata
 - the adapter loop records adapter decisions and observations, links tool calls
@@ -117,9 +121,9 @@ that later write-capable loops will use:
   decisions, pending tool calls, latest errors, recovery markers, and final
   responses
 
-Deferred runtime features remain write-session execution, context compression,
-sub-agent delegation, approval prompts, broad shell access, network/deployment
-tools, and write-session repair beyond inspection.
+Deferred runtime features remain context compression, sub-agent delegation,
+approval prompts, broad shell access, network/deployment tools, patch
+transactions, rollback, and write-session repair beyond inspection.
 
 ## Implemented Vs Deferred
 
@@ -132,15 +136,15 @@ actually supports.
 
 | Capability area | Implemented now | Still deferred |
 | --- | --- | --- |
-| Core harness runtime | An adapter-driven read-only `harness run <goal>` path that starts a session, assembles context, asks either the deterministic fixture adapter or `codex-local` subprocess adapter for decisions, dispatches allowed inspection tools, observes results, and records a final response | Autonomous code changes, write sessions, context compression, and sub-agent delegation |
+| Core harness runtime | An adapter-driven `harness run <goal>` path that starts in read-only mode by default, supports explicit `--permission workspace-write`, assembles context, asks either the deterministic fixture adapter or `codex-local` subprocess adapter for decisions, dispatches allowed tools, observes results, and records a final response | Broad autonomous operation, approval prompts, context compression, and sub-agent delegation |
 | Runtime adapter contract | Provider-independent adapter input and decision contracts for JSON-safe tool calls and final responses, deterministic fixture adapter support, provider-neutral prompt assembly, strict JSON output parsing, and subprocess-backed `codex-local` support | Hosted/provider SDK adapters, streaming decisions, and model-specific prompt assembly |
-| Session persistence | Append-only JSONL event logs with stable session ids, event ids, timestamps, event types, cwd/workspace metadata, adapter decisions, observations, tool results, errors, and JSON-safe payloads | Long-term memory, compaction checkpoints, cross-session retrieval, and write-session repair beyond inspection |
-| Recovery | Session replay can summarize malformed records, latest recovery markers, latest errors, pending adapter decisions, pending tool calls, and final responses; `harness run --resume --session-id <id>` inspects read-only sessions | Resuming model state, replaying unfinished tool outputs, and completing interrupted write sessions |
+| Session persistence | Append-only JSONL event logs with stable session ids, event ids, timestamps, event types, cwd/workspace metadata, selected permission mode, adapter decisions, observations, tool results, changed files, denied diagnostics, errors, and JSON-safe payloads | Long-term memory, compaction checkpoints, cross-session retrieval, and write-session repair beyond inspection |
+| Recovery | Session replay can summarize malformed records, latest recovery markers, latest errors, pending adapter decisions, pending tool calls, and final responses; `harness run --resume --session-id <id>` inspects existing sessions | Resuming model state, replaying unfinished tool outputs, and completing interrupted write sessions |
 | Context assembly | Workspace, OS/date, git status, recent commits, project instructions, harness/cache state, and bounded skill/resolver summaries are returned as structured sections | Token-budget optimization, semantic retrieval, automatic summarization, and dropped-context audit trails |
-| Tool registry | Runtime tools have stable ids, descriptions, input schema metadata, required permissions, callable dispatch, and structured result contracts | External tool adapters, hosted/provider tools, tool streaming, and rich schema validation beyond local metadata |
+| Tool registry | Runtime tools have stable ids, descriptions, input schema metadata, required permissions, callable dispatch, bounded read/list/search tools, workspace-write file writes, and structured result contracts | External tool adapters, hosted/provider tools, tool streaming, and rich schema validation beyond local metadata |
 | Permission model | `read-only`, `workspace-write`, `full-access`, and `high-risk` levels exist; dispatch denies tools above the active permission; command risk is classified before shell execution | Human approval prompts, persisted approval grants, sub-agent scopes, and configurable organization policy plugins |
-| Shell execution | `local.shell` uses argv-safe subprocess execution, bounded output, exit-code capture, timeout, and conservative allow/deny classification | Network, deployment, destructive, and unknown command classes without a future approval path |
-| File writes | `local.write_file` is available behind `workspace-write`, checks workspace boundaries, rejects protected generated pack paths, and reports changed files | Patch application, multi-file transactions, rollback plans, and recovery that completes interrupted edits |
+| Shell execution | `local.shell` uses argv-safe subprocess execution, bounded output, exit-code capture, timeout, and conservative allow/deny classification; known validation commands are allowed only in workspace-write sessions | Network, deployment, destructive, git network, and unknown command classes without a future approval path |
+| File writes | `local.write_file` is available behind explicit `workspace-write`, checks workspace boundaries, rejects protected generated pack paths, and reports changed files | Patch application, multi-file transactions, rollback plans, and recovery that completes interrupted edits |
 | Lifecycle hooks | Pre-tool hooks can deny dispatch; post-tool hooks can attach warning/audit metadata; pre-hook failures fail closed | Hook plugin discovery, external audit sinks, redaction hooks, and workflow-specific hook packs |
 | Agent Skills format | Generated skills are validated for frontmatter, directory-name agreement, description length, and valid `references/` links; packs can be exported for runtime targets | Automated refresh from the live Agent Skills spec, optional metadata policy, and compatibility/allowed-tools enforcement |
 | Skill-pack lifecycle | Repo discovery, onboarding, generated skills, resolver metadata, approval hashes, eval replay, cache/export, proposals, and verified pack state are implemented | Batch onboarding, PR review workflows, CI eval replay, hosted dashboard, release readiness campaigns, and autonomous improvement |

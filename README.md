@@ -65,6 +65,7 @@ Start the current deterministic runtime slice:
 
 ```sh
 uv run harness run "summarize this repo state"
+uv run harness run "edit then validate" --permission workspace-write --adapter codex-local
 uv run harness run --resume --session-id <session-id>
 ```
 
@@ -112,15 +113,16 @@ eventually own:
 
 The current CLI implements the skill, validation, trace, cache, export, proposal,
 and safety-policy foundation that this runtime will use. It also includes a
-first runtime vertical slice: `harness run <goal>` starts a read-only session,
-assembles bounded workspace context, enforces read-only tool permissions,
-asks either the default deterministic fixture adapter or the subprocess-backed
+first runtime vertical slice: `harness run <goal>` starts a read-only session by
+default, assembles bounded workspace context, enforces tool permissions, asks
+either the default deterministic fixture adapter or the subprocess-backed
 `codex-local` adapter for tool-call or final-response decisions, writes adapter
-decisions, observations, tool results, errors, and final responses to an
-append-only session JSONL log under `.agent-harness/sessions/`, and can
-inspect/resume an existing session log. The `codex-local` adapter is still
-read-only: denied tools and adapter failures are surfaced as diagnostics rather
-than approvals or writes.
+decisions, observations, tool results, errors, changed-file metadata, and final
+responses to an append-only session JSONL log under `.agent-harness/sessions/`,
+and can inspect/resume an existing session log. `--permission workspace-write`
+is an explicit opt-in for bounded local file writes and known validation
+commands. Destructive, network, deployment, unknown, and full-access requests are
+still denied and surfaced as diagnostics rather than approval prompts.
 
 ## Runtime Progress
 
@@ -133,9 +135,9 @@ and the skill format contract in
 | --- | --- | --- |
 | Skill lifecycle | Repo/org pack generation, validation, approval, eval replay, cache, export, proposal flow | CI eval replay, hosted dashboard, autonomous improvement |
 | Agent Skills contract | Generated `SKILL.md` frontmatter checks, directory-name matching, reference-link validation, bounded exported skill packs | Full external spec refresh automation and richer optional metadata policy |
-| Runtime loop | Adapter-driven `harness run <goal>` read-only session with deterministic fixture/default adapter decisions, optional subprocess-backed `codex-local` decisions, context assembly, tool calls, observations, max-step/error safeguards, and final response events | Write sessions, approval prompts, multi-step autonomous code changes, context compression |
+| Runtime loop | Adapter-driven `harness run <goal>` sessions with read-only default mode, explicit `--permission workspace-write` opt-in, deterministic fixture/default adapter decisions, optional subprocess-backed `codex-local` decisions, context assembly, tool calls, observations, max-step/error safeguards, and final response events | Approval prompts, broad autonomous operation, context compression |
 | Runtime persistence | Append-only session JSONL events for adapter decisions, observations, tool calls/results, errors, final responses, and recovery inspection | Durable memory model, compaction checkpoints, write-session repair |
-| Runtime tools | Typed tool registry, structured results, read-only inspection tools, safe argv shell tool, workspace-write file tool internals | Broad shell/network/deployment tools, approval-backed risky dispatch |
+| Runtime tools | Typed tool registry, structured results, read/list/search inspection tools, safe argv shell tool for known validation commands, and workspace-write file writes with changed-file audit metadata | Broad shell/network/deployment tools, approval-backed risky dispatch, patch transactions, rollback |
 | Safety and hooks | Permission levels, command risk classification, pre-tool denial hooks, post-tool warnings, protected artifact write rejection | Interactive approval model, policy plugins, sub-agent permission scopes |
 
 Deeper workflow and boundary notes live in:
