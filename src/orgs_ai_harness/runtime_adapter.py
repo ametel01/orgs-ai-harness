@@ -171,6 +171,28 @@ def coerce_adapter_decision(raw: AdapterDecision | JsonObject) -> AdapterDecisio
     return adapter_decision_from_json(raw)
 
 
+def parse_adapter_decision_output(output: str) -> AdapterDecision:
+    """Parse exactly one JSON adapter decision object from model output."""
+
+    stripped = output.strip()
+    if not stripped:
+        raise RuntimeAdapterError("adapter output is empty; expected exactly one JSON object")
+    decoder = json.JSONDecoder(parse_constant=_reject_non_json_constant)
+    try:
+        raw, end = decoder.raw_decode(stripped)
+    except RuntimeAdapterError:
+        raise
+    except json.JSONDecodeError as exc:
+        raise RuntimeAdapterError(
+            f"adapter output must be valid JSON object text: line {exc.lineno} column {exc.colno}"
+        ) from exc
+    if stripped[end:].strip():
+        raise RuntimeAdapterError("adapter output must contain exactly one JSON object and no extra text")
+    if not isinstance(raw, dict):
+        raise RuntimeAdapterError("adapter output must be a JSON object")
+    return adapter_decision_from_json(raw)
+
+
 def adapter_decision_from_json(raw: object) -> AdapterDecision:
     if not isinstance(raw, dict):
         raise RuntimeAdapterError("adapter decision must be a JSON object")
@@ -192,6 +214,10 @@ def adapter_decision_from_json(raw: object) -> AdapterDecision:
             raise RuntimeAdapterError("final-response decision field summary must be a string")
         return FinalResponseDecision(summary=summary)
     raise RuntimeAdapterError("adapter decision type must be 'tool_call' or 'final_response'")
+
+
+def _reject_non_json_constant(constant: str) -> object:
+    raise RuntimeAdapterError(f"adapter output contains non-JSON-safe value: {constant}")
 
 
 def build_adapter_tool_catalog(registry: ToolRegistry) -> tuple[JsonObject, ...]:

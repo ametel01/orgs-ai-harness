@@ -21,6 +21,7 @@ from orgs_ai_harness.runtime_adapter import (
     assemble_runtime_prompt,
     build_adapter_skill_catalog,
     build_adapter_tool_catalog,
+    parse_adapter_decision_output,
 )
 from orgs_ai_harness.runtime_context import assemble_runtime_context
 from orgs_ai_harness.runtime_events import RuntimeSessionStore
@@ -54,6 +55,33 @@ class RuntimeAdapterContractTests(unittest.TestCase):
             with self.subTest(case=case):
                 with self.assertRaises(RuntimeAdapterError):
                     adapter_decision_from_json(case)
+
+    def test_strict_adapter_output_parser_accepts_valid_decision_objects(self) -> None:
+        tool_decision = parse_adapter_decision_output(
+            '{"type":"tool_call","tool_id":"local.search_text","tool_input":{"pattern":"needle"}}'
+        )
+        final_decision = parse_adapter_decision_output('  {"type":"final_response","summary":"done"}\n')
+
+        self.assertEqual(tool_decision, ToolCallDecision("local.search_text", {"pattern": "needle"}))
+        self.assertEqual(final_decision, FinalResponseDecision("done"))
+
+    def test_strict_adapter_output_parser_rejects_ambiguous_or_invalid_text(self) -> None:
+        cases = {
+            "malformed": "{bad json",
+            "extra_prose_before": 'Here: {"type":"final_response","summary":"done"}',
+            "extra_prose_after": '{"type":"final_response","summary":"done"} trailing',
+            "non_object": '["not", "object"]',
+            "unsupported_type": '{"type":"plan","summary":"done"}',
+            "missing_fields": '{"type":"tool_call","tool_id":"local.cwd"}',
+            "invalid_tool_input": '{"type":"tool_call","tool_id":"local.cwd","tool_input":[]}',
+            "non_json_safe": '{"type":"tool_call","tool_id":"local.cwd","tool_input":{"value":NaN}}',
+        }
+
+        for name, output in cases.items():
+            with self.subTest(name=name):
+                with self.assertRaises(RuntimeAdapterError) as raised:
+                    parse_adapter_decision_output(output)
+                self.assertTrue(str(raised.exception))
 
     def test_fixture_adapter_returns_decisions_in_order_and_records_observations(self) -> None:
         adapter = FixtureRuntimeAdapter([ToolCallDecision("local.cwd", {}), FinalResponseDecision("done")])
