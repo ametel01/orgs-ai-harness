@@ -17,7 +17,7 @@ test:
 	uv run pytest -q
 
 coverage:
-	uv run pytest -q
+	uv run pytest -q --cov=orgs_ai_harness --cov-report=term-missing
 
 verify: lint typecheck test
 
