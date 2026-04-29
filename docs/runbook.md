@@ -203,6 +203,7 @@ Start the read-only runtime vertical slice:
 
 ```sh
 uv run harness run "summarize this repo state"
+uv run harness run "summarize this repo state" --adapter fixture
 ```
 
 The output includes a session id and JSONL log path under
@@ -216,8 +217,20 @@ The output includes a session id and JSONL log path under
 - matching `adapter_observation` events for tool-call decisions
 - `final_response`
 
-The current CLI path is deterministic and fixture-adapter driven. It exercises
+The default CLI path is deterministic and fixture-adapter driven. It exercises
 the adapter protocol and read-only tool loop without calling a real LLM provider.
+To route decisions through a local subprocess, configure a command that reads the
+prompt from stdin and writes exactly one strict JSON decision to stdout:
+
+```sh
+ORGS_AI_HARNESS_CODEX_LOCAL_COMMAND="codex-local" \
+  uv run harness run "summarize this repo state" --adapter codex-local
+```
+
+Set `ORGS_AI_HARNESS_CODEX_LOCAL_TIMEOUT=<seconds>` when the default 30-second
+timeout is too long or too short for local diagnostics. The model-backed path is
+still read-only and returns a non-zero CLI status when the session ends with an
+adapter error, denied tool, or max-step diagnostic.
 
 Inspect/resume a read-only session:
 
@@ -235,6 +248,17 @@ Common failures:
   silently ignored.
 - Adapter exceptions, malformed decisions, max-step stops, and denied tool calls
   are logged as `error` events and surfaced through the final diagnostic summary.
+- `codex-local adapter executable not found`: install the configured command or
+  set `ORGS_AI_HARNESS_CODEX_LOCAL_COMMAND` to the correct argv string.
+- `adapter output must be valid JSON object text`: make the local adapter write
+  only one JSON object to stdout, with no prose before or after it.
+- `codex-local adapter exited with code ...` or `wrote stderr`: inspect the
+  local subprocess stderr/stdout details in the diagnostic summary.
+- `codex-local adapter timed out`: raise
+  `ORGS_AI_HARNESS_CODEX_LOCAL_TIMEOUT` or debug the local command directly.
+- `adapter-selected tool denied`: the adapter requested a tool or shell command
+  outside read-only permissions. This is expected for workspace-write,
+  destructive, network, deployment, and unknown operations.
 
 Permission behavior is intentionally conservative. The CLI run path uses
 read-only mode. Workspace-write tools are available to tests and future runtime

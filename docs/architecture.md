@@ -80,10 +80,12 @@ safety policy become runtime subsystems rather than the whole product boundary.
 
 ## Implemented Runtime Slice
 
-`harness run <goal>` is currently adapter-driven, deterministic, and local. The
-default CLI path uses a fixture-style adapter, not a real LLM provider. It does
-not spawn sub-agents or make autonomous edits. The slice proves the runtime
-contracts that later model-driven loops will use:
+`harness run <goal>` is adapter-driven, local, and read-only. The default CLI
+path uses a deterministic fixture-style adapter. `--adapter codex-local` can
+call a configured local subprocess that reads the assembled prompt on stdin and
+returns exactly one strict JSON decision on stdout. Neither path spawns
+sub-agents or makes autonomous edits. The slice proves the runtime contracts
+that later write-capable loops will use:
 
 - session logs are append-only JSONL files under `.agent-harness/sessions/`
 - events include session ids, event ids, timestamps, event type, cwd/workspace
@@ -92,6 +94,9 @@ contracts that later model-driven loops will use:
   instructions, harness/cache state, and bounded skill/resolver summaries
 - runtime adapters receive the goal, assembled context, sorted tool catalog,
   bounded skill/resolver catalog, prior observations, and active permission mode
+- the `codex-local` adapter assembles a provider-neutral prompt, applies a
+  subprocess timeout, rejects stderr/non-zero exits/malformed JSON, and surfaces
+  adapter failures as session diagnostics
 - adapter decisions can request a tool call with JSON-safe input or provide a
   final human-readable response
 - the tool registry exposes typed tool metadata, permission requirements, and
@@ -112,7 +117,7 @@ contracts that later model-driven loops will use:
   decisions, pending tool calls, latest errors, recovery markers, and final
   responses
 
-Deferred runtime features remain real model planning, context compression,
+Deferred runtime features remain write-session execution, context compression,
 sub-agent delegation, approval prompts, broad shell access, network/deployment
 tools, and write-session repair beyond inspection.
 
@@ -127,8 +132,8 @@ actually supports.
 
 | Capability area | Implemented now | Still deferred |
 | --- | --- | --- |
-| Core harness runtime | An adapter-driven read-only `harness run <goal>` path that starts a session, assembles context, asks a deterministic adapter for decisions, dispatches inspection tools, observes results, and records a final response | Real LLM-owned planning, autonomous code changes, context compression, and sub-agent delegation |
-| Runtime adapter contract | Provider-independent adapter input and decision contracts for JSON-safe tool calls and final responses, plus a deterministic fixture adapter for tests/default local execution | Hosted/provider LLM adapters, streaming decisions, and model-specific prompt assembly |
+| Core harness runtime | An adapter-driven read-only `harness run <goal>` path that starts a session, assembles context, asks either the deterministic fixture adapter or `codex-local` subprocess adapter for decisions, dispatches allowed inspection tools, observes results, and records a final response | Autonomous code changes, write sessions, context compression, and sub-agent delegation |
+| Runtime adapter contract | Provider-independent adapter input and decision contracts for JSON-safe tool calls and final responses, deterministic fixture adapter support, provider-neutral prompt assembly, strict JSON output parsing, and subprocess-backed `codex-local` support | Hosted/provider SDK adapters, streaming decisions, and model-specific prompt assembly |
 | Session persistence | Append-only JSONL event logs with stable session ids, event ids, timestamps, event types, cwd/workspace metadata, adapter decisions, observations, tool results, errors, and JSON-safe payloads | Long-term memory, compaction checkpoints, cross-session retrieval, and write-session repair beyond inspection |
 | Recovery | Session replay can summarize malformed records, latest recovery markers, latest errors, pending adapter decisions, pending tool calls, and final responses; `harness run --resume --session-id <id>` inspects read-only sessions | Resuming model state, replaying unfinished tool outputs, and completing interrupted write sessions |
 | Context assembly | Workspace, OS/date, git status, recent commits, project instructions, harness/cache state, and bounded skill/resolver summaries are returned as structured sections | Token-budget optimization, semantic retrieval, automatic summarization, and dropped-context audit trails |

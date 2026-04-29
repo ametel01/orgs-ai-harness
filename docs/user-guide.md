@@ -180,13 +180,30 @@ Run the current read-only runtime loop from a workspace:
 
 ```sh
 uv run harness run "summarize this repo state"
+uv run harness run "summarize this repo state" --adapter fixture
 ```
 
 The command starts a persisted session, assembles bounded context, and asks the
-current deterministic runtime adapter for read-only tool-call and final-response
-decisions. It prints the session id and log path. Logs are written as JSONL
-under `.agent-harness/sessions/` and include adapter decisions, observations,
-tool calls, tool results, errors, and final responses.
+default deterministic runtime adapter for read-only tool-call and final-response
+decisions. Use `--adapter fixture` to select that adapter explicitly. It prints
+the session id and log path. Logs are written as JSONL under
+`.agent-harness/sessions/` and include adapter decisions, observations, tool
+calls, tool results, errors, and final responses.
+
+Use the local subprocess-backed adapter when you have a compatible command that
+reads the assembled prompt from stdin and writes exactly one JSON decision to
+stdout:
+
+```sh
+ORGS_AI_HARNESS_CODEX_LOCAL_COMMAND="codex-local" \
+  uv run harness run "summarize this repo state" --adapter codex-local
+```
+
+Set `ORGS_AI_HARNESS_CODEX_LOCAL_TIMEOUT=<seconds>` to override the default
+30-second subprocess timeout. `codex-local` receives the same read-only
+permission mode as the fixture adapter. It can request allowed inspection tools
+or return a final response; workspace writes, destructive shell commands,
+network/deployment commands, and unknown tools are denied and logged.
 
 Inspect or resume an existing read-only session:
 
@@ -194,11 +211,10 @@ Inspect or resume an existing read-only session:
 uv run harness run --resume --session-id <session-id>
 ```
 
-The runtime can classify safe local shell commands and has workspace-write file
-tools in the domain layer, but the CLI run path remains read-only. Destructive,
-network, deployment, and unknown command classes are denied by default. Real LLM
-planning, write sessions, approvals, sub-agents, and context compression remain
-deferred.
+Malformed model output, missing executables, non-zero subprocess exits, stderr,
+timeouts, max-step stops, and denied tools are surfaced in the final diagnostic
+summary and written as `error` events. Write sessions, approvals, sub-agents,
+and context compression remain deferred.
 
 ## Proposals And Refresh
 
