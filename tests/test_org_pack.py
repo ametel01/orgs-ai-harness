@@ -271,6 +271,24 @@ class OrgPackFoundationTests(unittest.TestCase):
         self.assertIn(".agent-harness/ci-eval/", workflow)
         self.assertIn("actions/upload-artifact@v4", workflow)
 
+    def test_ci_workflow_uses_artifact_only_pr_review_command(self) -> None:
+        workflow = (Path.cwd() / ".github" / "workflows" / "ci.yml").read_text(encoding="utf-8")
+
+        self.assertIn("pr-review-artifacts:", workflow)
+        self.assertIn("github.event_name == 'pull_request'", workflow)
+        self.assertIn("fetch-depth: 0", workflow)
+        self.assertIn("uv run harness review changed-files", workflow)
+        self.assertIn("--base", workflow)
+        self.assertIn("--head", workflow)
+        self.assertIn("--json-path", workflow)
+        self.assertIn("--markdown-path", workflow)
+        self.assertIn(".agent-harness/pr-review/", workflow)
+        self.assertIn("name: pr-review-artifacts", workflow)
+        self.assertIn("actions/upload-artifact@v4", workflow)
+        self.assertNotIn("pull_request_target", workflow)
+        self.assertNotIn("pull-requests: write", workflow)
+        self.assertNotIn("issues: write", workflow)
+
     def test_cli_init_github_profile_url_infers_org_name(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
             init_result = subprocess.run(

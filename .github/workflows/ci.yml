@@ -155,3 +155,126 @@ jobs:
         with:
           name: ci-eval-replay
           path: .agent-harness/ci-eval/
+
+  pr-review-artifacts:
+    name: PR Review Artifacts
+    runs-on: ubuntu-latest
+    needs: verify
+    if: github.event_name == 'pull_request'
+
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.13"
+
+      - name: Set up uv
+        uses: astral-sh/setup-uv@v5
+        with:
+          enable-cache: true
+
+      - name: Sync dependencies
+        run: make sync
+
+      - name: Discover eligible PR review repo
+        env:
+          GITHUB_REPOSITORY_NAME: ${{ github.event.repository.name }}
+          GITHUB_REPOSITORY_FULL_NAME: ${{ github.repository }}
+        run: |
+          mkdir -p .agent-harness/pr-review
+          uv run python - <<'PY'
+          import json
+          import os
+          from pathlib import Path
+
+          from orgs_ai_harness.repo_registry import load_repo_entries
+
+          root = Path("org-agent-skills")
+          output_root = Path(".agent-harness/pr-review")
+          repo_name = os.environ["GITHUB_REPOSITORY_NAME"]
+          repo_full_name = os.environ["GITHUB_REPOSITORY_FULL_NAME"]
+          targets = []
+          skipped = []
+
+          for entry in load_repo_entries(root / "harness.yml"):
+              artifact_root = root / "repos" / entry.id
+              repo_path = (root / entry.local_path).resolve() if entry.local_path else None
+              entry_url = entry.url or ""
+              matches_repo = (
+                  entry.name == repo_name
+                  or entry_url.endswith(f"/{repo_full_name}")
+                  or entry_url.endswith(f"/{repo_full_name}.git")
+                  or (repo_path is not None and repo_path.name == repo_name)
+              )
+              if not matches_repo:
+                  continue
+
+              reason = None
+              if not entry.active or entry.external:
+                  reason = "not active selected coverage"
+              elif entry.coverage_status not in {"approved-unverified", "verified"}:
+                  reason = f"status is {entry.coverage_status}"
+              elif not (artifact_root / "approval.yml").is_file():
+                  reason = "missing approval.yml"
+              elif not artifact_root.is_dir():
+                  reason = "missing repo artifact root"
+              elif repo_path is None or not repo_path.is_dir():
+                  reason = f"missing local repo path: {entry.local_path or '-'}"
+              else:
+                  targets.append(entry.id)
+
+              if reason is not None:
+                  skipped.append({"repo_id": entry.id, "reason": reason})
+
+          (output_root / "repo-id.txt").write_text("\n".join(targets[:1]) + ("\n" if targets else ""), encoding="utf-8")
+          (output_root / "discovery.json").write_text(
+              json.dumps(
+                  {
+                      "repository": repo_full_name,
+                      "targets": targets[:1],
+                      "skipped": skipped,
+                  },
+                  indent=2,
+                  sort_keys=True,
+              )
+              + "\n",
+              encoding="utf-8",
+          )
+          if targets:
+              print(f"Eligible PR review repo: {targets[0]}")
+          else:
+              (output_root / "SKIPPED.md").write_text(
+                  "# PR Review Artifacts Skipped\n\nNo eligible approved local repo pack matched this PR.\n",
+                  encoding="utf-8",
+              )
+              print("No eligible PR review repo found.")
+          PY
+
+      - name: Run PR review artifact command
+        run: |
+          if [ ! -s .agent-harness/pr-review/repo-id.txt ]; then
+            echo "No eligible PR review repo found."
+            exit 0
+          fi
+
+          repo_id="$(cat .agent-harness/pr-review/repo-id.txt)"
+          echo "Running PR review artifacts for ${repo_id}"
+          uv run harness review changed-files \
+            --repo-id "$repo_id" \
+            --base "${{ github.event.pull_request.base.sha }}" \
+            --head "${{ github.event.pull_request.head.sha }}" \
+            --json-path ".agent-harness/pr-review/${repo_id}.json" \
+            --markdown-path ".agent-harness/pr-review/${repo_id}.md" \
+            > ".agent-harness/pr-review/${repo_id}.stdout.txt"
+
+      - name: Upload PR review artifacts
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: pr-review-artifacts
+          path: .agent-harness/pr-review/
