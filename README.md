@@ -112,7 +112,7 @@ make lint       # Ruff format check and lint
 make typecheck  # Pyright basic mode
 make test       # pytest
 make coverage   # pytest coverage with subprocess tracing, fail_under=81
-make verify     # lint, typecheck, test
+make verify     # lint, typecheck, coverage
 make security   # pip-audit and detect-secrets baseline check
 make build      # uv build
 ```
