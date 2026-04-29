@@ -2,20 +2,18 @@
   "repo_id": "orgs-ai-harness",
   "adapter": "fixture",
   "pack_ref": "repos/orgs-ai-harness/approval.yml",
-  "repo_source_commit": "b35da036e19cd488edfde6c1cc6f8041d42235a2",
+  "repo_source_commit": "01bb23b5a73bd3563e50605a678dbbe645512064",
   "baseline_pass_rate": 0.5556,
   "skill_pack_pass_rate": 1.0,
   "baseline_delta": 0.4444,
   "rediscovery_cost_delta": 0.5036,
-  "status": "development",
-  "blocking_unknowns": [
-    "unk_001"
-  ],
+  "status": "verified",
+  "blocking_unknowns": [],
   "command_approvals_used": [
     "python scripts/check-pack-shape.py",
     "harness validate orgs-ai-harness"
   ],
-  "development": true,
+  "development": false,
   "baseline": {
     "run": "baseline",
     "pack_ref": null,

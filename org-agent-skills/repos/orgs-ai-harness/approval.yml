@@ -1,7 +1,7 @@
 {
   "schema_version": 1,
   "repo_id": "orgs-ai-harness",
-  "status": "approved-unverified",
+  "status": "verified",
   "decision": "approved",
   "pack_ref": "repos/orgs-ai-harness/approval.yml",
   "actor": "user",
@@ -210,11 +210,15 @@
       "protected": true
     }
   ],
-  "verified": false,
-  "warnings": [
-    {
-      "code": "approved-unverified",
-      "message": "Pack is human-approved but eval replay has not verified it."
-    }
-  ]
+  "verified": true,
+  "warnings": [],
+  "verification": {
+    "adapter": "fixture",
+    "baseline_pass_rate": 0.5556,
+    "skill_pack_pass_rate": 1.0,
+    "baseline_delta": 0.4444,
+    "rediscovery_cost_delta": 0.5036,
+    "status": "verified",
+    "report_path": "repos/orgs-ai-harness/eval-report.yml"
+  }
 }

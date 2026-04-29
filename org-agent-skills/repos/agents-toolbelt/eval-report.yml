@@ -7,15 +7,13 @@
   "skill_pack_pass_rate": 1.0,
   "baseline_delta": 0.4444,
   "rediscovery_cost_delta": 0.5036,
-  "status": "development",
-  "blocking_unknowns": [
-    "unk_001"
-  ],
+  "status": "verified",
+  "blocking_unknowns": [],
   "command_approvals_used": [
     "python scripts/check-pack-shape.py",
     "harness validate agents-toolbelt"
   ],
-  "development": true,
+  "development": false,
   "baseline": {
     "run": "baseline",
     "pack_ref": null,

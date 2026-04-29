@@ -12,7 +12,7 @@ repos:
     url: "https://github.com/ametel01/orgs-ai-harness"
     default_branch: "main"
     local_path: ".."
-    coverage_status: "approved-unverified"
+    coverage_status: "verified"
     active: true
     deactivation_reason: null
     pack_ref: "repos/orgs-ai-harness/approval.yml"
@@ -24,7 +24,7 @@ repos:
     url: "https://github.com/ametel01/vitals-db"
     default_branch: "main"
     local_path: "../../vitals-db"
-    coverage_status: "approved-unverified"
+    coverage_status: "verified"
     active: true
     deactivation_reason: null
     pack_ref: "repos/vitals-db/approval.yml"
@@ -36,7 +36,7 @@ repos:
     url: "https://github.com/ametel01/horizon-starknet"
     default_branch: "main"
     local_path: "../../horizon-starknet"
-    coverage_status: "approved-unverified"
+    coverage_status: "verified"
     active: true
     deactivation_reason: null
     pack_ref: "repos/horizon-starknet/approval.yml"
@@ -48,7 +48,7 @@ repos:
     url: "https://github.com/ametel01/agent-vitals"
     default_branch: "master"
     local_path: "../../agent-vitals"
-    coverage_status: "approved-unverified"
+    coverage_status: "verified"
     active: true
     deactivation_reason: null
     pack_ref: "repos/agent-vitals/approval.yml"
@@ -60,7 +60,7 @@ repos:
     url: "https://github.com/ametel01/agents-toolbelt"
     default_branch: "main"
     local_path: "../../agents-toolbelt"
-    coverage_status: "approved-unverified"
+    coverage_status: "verified"
     active: true
     deactivation_reason: null
     pack_ref: "repos/agents-toolbelt/approval.yml"

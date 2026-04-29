@@ -4,15 +4,15 @@
       "id": "unk_001",
       "question": "Which command is the narrowest reliable unit test command?",
       "why_it_matters": "Eval and skill generation need reproducible validation commands.",
-      "severity": "blocking",
-      "status": "open",
+      "severity": "important",
+      "status": "closed",
       "evidence": [
         {
           "path": "package.json",
-          "note": "Package manifest found; test script needs confirmation."
+          "note": "Confirmed package script: bun test."
         }
       ],
-      "recommended_investigation": "Inspect package scripts and CI job command usage."
+      "recommended_investigation": "Resolved on 2026-04-29; use bun test for the narrow unit test command."
     }
   ],
   "candidate_org_skills": [

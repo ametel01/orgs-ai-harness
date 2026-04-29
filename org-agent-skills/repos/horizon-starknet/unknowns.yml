@@ -4,15 +4,15 @@
       "id": "unk_001",
       "question": "Which command is the narrowest reliable unit test command?",
       "why_it_matters": "Eval and skill generation need reproducible validation commands.",
-      "severity": "blocking",
-      "status": "open",
+      "severity": "important",
+      "status": "closed",
       "evidence": [
         {
-          "path": ".github/workflows/cairo-build.yml",
-          "note": "Repository evidence found, but test command is unknown."
+          "path": "Makefile",
+          "note": "Confirmed local test target: make test, which runs cd contracts && snforge test."
         }
       ],
-      "recommended_investigation": "Inspect package scripts and CI job command usage."
+      "recommended_investigation": "Resolved on 2026-04-29; use make test for the narrow local contract test command."
     }
   ],
   "candidate_org_skills": [

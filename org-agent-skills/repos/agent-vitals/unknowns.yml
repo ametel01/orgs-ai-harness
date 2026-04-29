@@ -4,15 +4,19 @@
       "id": "unk_001",
       "question": "Which command is the narrowest reliable unit test command?",
       "why_it_matters": "Eval and skill generation need reproducible validation commands.",
-      "severity": "blocking",
+      "severity": "important",
       "status": "open",
       "evidence": [
         {
           "path": "package.json",
-          "note": "Package manifest found; test script needs confirmation."
+          "note": "No test script is declared; available local gates are check/typecheck/lint/format:check."
+        },
+        {
+          "path": "repository file search",
+          "note": "No test, tests, __tests__, .test., or .spec. paths were found in the local checkout."
         }
       ],
-      "recommended_investigation": "Inspect package scripts and CI job command usage."
+      "recommended_investigation": "Keep unresolved but non-blocking until the repo adds a test script or test files."
     }
   ],
   "candidate_org_skills": [

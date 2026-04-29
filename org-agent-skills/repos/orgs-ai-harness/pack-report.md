@@ -1,9 +1,9 @@
 # Eval Pack Report: orgs-ai-harness
 
-- Status: development
+- Status: verified
 - Adapter: fixture
 - Pack Ref: repos/orgs-ai-harness/approval.yml
-- Repo Source Commit: b35da036e19cd488edfde6c1cc6f8041d42235a2
+- Repo Source Commit: 01bb23b5a73bd3563e50605a678dbbe645512064
 - Baseline Pass Rate: 0.5556
 - Skill-Pack Pass Rate: 1.0
 - Baseline Delta: 0.4444
@@ -11,7 +11,7 @@
 
 ## Blocking Unknowns
 
-- unk_001
+- None.
 
 ## Command Approvals Used
 

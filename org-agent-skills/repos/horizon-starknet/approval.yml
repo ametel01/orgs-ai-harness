@@ -1,7 +1,7 @@
 {
   "schema_version": 1,
   "repo_id": "horizon-starknet",
-  "status": "approved-unverified",
+  "status": "verified",
   "decision": "approved",
   "pack_ref": "repos/horizon-starknet/approval.yml",
   "actor": "user",
@@ -168,11 +168,15 @@
       "protected": true
     }
   ],
-  "verified": false,
-  "warnings": [
-    {
-      "code": "approved-unverified",
-      "message": "Pack is human-approved but eval replay has not verified it."
-    }
-  ]
+  "verified": true,
+  "warnings": [],
+  "verification": {
+    "adapter": "fixture",
+    "baseline_pass_rate": 0.5556,
+    "skill_pack_pass_rate": 1.0,
+    "baseline_delta": 0.4444,
+    "rediscovery_cost_delta": 0.5036,
+    "status": "verified",
+    "report_path": "repos/horizon-starknet/eval-report.yml"
+  }
 }

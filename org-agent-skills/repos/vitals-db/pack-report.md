@@ -1,6 +1,6 @@
 # Eval Pack Report: vitals-db
 
-- Status: development
+- Status: verified
 - Adapter: fixture
 - Pack Ref: repos/vitals-db/approval.yml
 - Repo Source Commit: 37ba3b380258b10aeed7e5e81fd7635aaf684f01
@@ -11,7 +11,7 @@
 
 ## Blocking Unknowns
 
-- unk_001
+- None.
 
 ## Command Approvals Used
 

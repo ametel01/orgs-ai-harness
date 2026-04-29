@@ -1,6 +1,6 @@
 # Eval Pack Report: agents-toolbelt
 
-- Status: development
+- Status: verified
 - Adapter: fixture
 - Pack Ref: repos/agents-toolbelt/approval.yml
 - Repo Source Commit: e927a1a662a6c9de0df49b9e2e9f3d9b241981cc
@@ -11,7 +11,7 @@
 
 ## Blocking Unknowns
 
-- unk_001
+- None.
 
 ## Command Approvals Used
 

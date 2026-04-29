@@ -1,6 +1,6 @@
 # Eval Pack Report: horizon-starknet
 
-- Status: development
+- Status: verified
 - Adapter: fixture
 - Pack Ref: repos/horizon-starknet/approval.yml
 - Repo Source Commit: 0af65bbdf35d923d9305d302a4bc415905be7929
@@ -11,7 +11,7 @@
 
 ## Blocking Unknowns
 
-- unk_001
+- None.
 
 ## Command Approvals Used
 
