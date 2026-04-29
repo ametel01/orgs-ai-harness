@@ -11,6 +11,8 @@ import unittest
 from dataclasses import replace
 from pathlib import Path
 
+import orgs_ai_harness.cli as cli_module
+import orgs_ai_harness.repo_onboarding as repo_onboarding_module
 from orgs_ai_harness.cache_manager import export_cached_pack, refresh_cache
 from orgs_ai_harness.config import load_harness_config, parse_harness_config, save_harness_config
 from orgs_ai_harness.eval_replay import AdapterAnswer, rediscovery_cost, score_answer
@@ -31,6 +33,7 @@ from orgs_ai_harness.repo_discovery import (
 )
 from orgs_ai_harness.repo_onboarding import is_sensitive_path
 from orgs_ai_harness.repo_registry import (
+    RepoEntry,
     RepoRegistryError,
     add_repo,
     deactivate_repo,
@@ -2192,6 +2195,75 @@ class RepoOnboardingTests(unittest.TestCase):
             capture_output=True,
             check=False,
         )
+
+    def test_org_level_prompt_uses_embedded_default_when_local_doc_is_missing(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            tmp_path = Path(tmp)
+            root = init_org_pack(tmp_path, "acme")
+            missing_prompt = tmp_path / "missing-org-prompt.md"
+            original_prompt_path = cli_module.ORG_LEVEL_SKILL_PROMPT_PATH
+            try:
+                cli_module.ORG_LEVEL_SKILL_PROMPT_PATH = missing_prompt
+
+                prompt = cli_module._render_org_level_skill_prompt(
+                    root,
+                    (root / "org" / "llm-output" / "codex" / "skills",),
+                    (tmp_path / "home" / ".agents" / "skills",),
+                )
+            finally:
+                cli_module.ORG_LEVEL_SKILL_PROMPT_PATH = original_prompt_path
+
+            self.assertIn("Create organization-level agent skills", prompt)
+            self.assertIn("Generation staging targets:", prompt)
+
+    def test_repo_prompt_uses_embedded_default_when_local_doc_is_missing(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            tmp_path = Path(tmp)
+            root = init_org_pack(tmp_path, "acme")
+            repo_path = create_basic_fixture_repo(tmp_path)
+            artifact_root = root / "repos" / "fixture-repo"
+            scan_result = repo_onboarding_module.OnboardingResult(
+                repo_id="fixture-repo",
+                artifact_root=artifact_root,
+                summary_path=artifact_root / "onboarding-summary.md",
+                unknowns_path=artifact_root / "unknowns.yml",
+                scan_manifest_path=artifact_root / "scan" / "scan-manifest.yml",
+                hypothesis_map_path=artifact_root / "scan" / "hypothesis-map.yml",
+            )
+            entry = RepoEntry(
+                id="fixture-repo",
+                name="fixture-repo",
+                local_path="fixture-repo",
+                url=None,
+                purpose=None,
+                owner=None,
+                default_branch="main",
+                external=False,
+                active=True,
+                coverage_status="selected",
+                deactivation_reason=None,
+                pack_ref=None,
+            )
+            missing_prompt = tmp_path / "missing-repo-prompt.md"
+            original_prompt_path = repo_onboarding_module.SINGLE_REPO_SKILL_PROMPT_PATH
+            try:
+                repo_onboarding_module.SINGLE_REPO_SKILL_PROMPT_PATH = missing_prompt
+
+                prompt = repo_onboarding_module._render_llm_skill_prompt(
+                    root,
+                    entry,
+                    repo_path,
+                    artifact_root,
+                    scan_result,
+                    (artifact_root / "llm-output" / "codex" / "skills",),
+                    (repo_path / ".agents" / "skills",),
+                    "codex",
+                )
+            finally:
+                repo_onboarding_module.SINGLE_REPO_SKILL_PROMPT_PATH = original_prompt_path
+
+            self.assertIn("Create repository-level agent skills", prompt)
+            self.assertIn("Available scan artifacts:", prompt)
 
     def commit_fixture_repo(self, repo_path: Path, message: str) -> str:
         if not (repo_path / ".git").is_dir():

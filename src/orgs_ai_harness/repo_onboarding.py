@@ -59,6 +59,13 @@ SENSITIVE_SUFFIXES = (".pem", ".key", ".p12", ".pfx")
 SENSITIVE_NAME_PARTS = ("credential", "credentials", "secret", "secrets", "token", "tokens")
 PROJECT_ROOT = Path(__file__).resolve().parents[2]
 SINGLE_REPO_SKILL_PROMPT_PATH = PROJECT_ROOT / "local-docs" / "SINGLE_REPO_SKILL_BUILD.md"
+DEFAULT_SINGLE_REPO_SKILL_PROMPT = """Create repository-level agent skills from the harness scan evidence.
+
+Use the onboarding summary, unknowns, scan manifest, and hypothesis map to
+create small, targeted skills for safe build/test/debug, navigation, and
+repo-specific workflows. Each skill must include valid frontmatter with a
+concrete name and trigger-focused description.
+"""
 
 
 def scan_repo_only(root: Path, repo_id: str) -> OnboardingResult:
@@ -573,7 +580,7 @@ def _render_llm_skill_prompt(
     target_roots: tuple[Path, ...],
     generator: str,
 ) -> str:
-    base_prompt = _read_prompt_file(SINGLE_REPO_SKILL_PROMPT_PATH)
+    base_prompt = _read_prompt_or_default(SINGLE_REPO_SKILL_PROMPT_PATH, DEFAULT_SINGLE_REPO_SKILL_PROMPT)
     staging_list = "\n".join(f"- {path}" for path in staging_roots)
     target_list = "\n".join(f"- {path}" for path in target_roots)
     return f"""{base_prompt}
@@ -819,9 +826,9 @@ def _repo_skill_staging_roots(artifact_root: Path, skill_target: str) -> tuple[P
     raise RepoOnboardingError(f"unsupported skill target: {skill_target}")
 
 
-def _read_prompt_file(path: Path) -> str:
+def _read_prompt_or_default(path: Path, default: str) -> str:
     if not path.is_file():
-        raise RepoOnboardingError(f"skill generation prompt file is missing: {path}")
+        return default.strip()
     text = path.read_text(encoding="utf-8").strip()
     if not text:
         raise RepoOnboardingError(f"skill generation prompt file is empty: {path}")

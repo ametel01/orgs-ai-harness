@@ -57,6 +57,13 @@ from orgs_ai_harness.validation import validate_org_pack, validate_repo_onboardi
 
 PROJECT_ROOT = Path(__file__).resolve().parents[2]
 ORG_LEVEL_SKILL_PROMPT_PATH = PROJECT_ROOT / "local-docs" / "ORG_LEVEL_SKILL_BUILD.md"
+DEFAULT_ORG_LEVEL_SKILL_PROMPT = """Create organization-level agent skills from the harness evidence.
+
+Use the registered repositories, generated org artifacts, and resolver metadata
+to create small, targeted skills that help agents choose the right repository
+or workflow. Each skill must include valid frontmatter with a concrete name and
+trigger-focused description.
+"""
 
 
 def build_parser() -> argparse.ArgumentParser:
@@ -1072,7 +1079,7 @@ def _generate_template_global_org_skill(root: Path) -> Path:
 
 
 def _render_org_level_skill_prompt(root: Path, staging_roots: tuple[Path, ...], target_roots: tuple[Path, ...]) -> str:
-    base_prompt = _read_text_required(ORG_LEVEL_SKILL_PROMPT_PATH)
+    base_prompt = _read_text_or_default(ORG_LEVEL_SKILL_PROMPT_PATH, DEFAULT_ORG_LEVEL_SKILL_PROMPT)
     staging_list = "\n".join(f"- {path}" for path in staging_roots)
     target_list = "\n".join(f"- {path}" for path in target_roots)
     entries = load_repo_entries(root / "harness.yml")
@@ -1305,9 +1312,9 @@ def _registered_local_repo_paths(root: Path) -> tuple[Path, ...]:
     return tuple(path for path in paths if path.is_dir())
 
 
-def _read_text_required(path: Path) -> str:
+def _read_text_or_default(path: Path, default: str) -> str:
     if not path.is_file():
-        raise OrgPackError(f"skill generation prompt file is missing: {path}")
+        return default.strip()
     text = path.read_text(encoding="utf-8").strip()
     if not text:
         raise OrgPackError(f"skill generation prompt file is empty: {path}")
