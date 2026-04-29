@@ -5,6 +5,20 @@ on:
     branches:
       - main
   pull_request:
+  workflow_dispatch:
+    inputs:
+      version:
+        description: "Optional release version identifier"
+        required: false
+        type: string
+      base:
+        description: "Optional base git ref for the release range"
+        required: false
+        type: string
+      head:
+        description: "Optional head git ref for the release range"
+        required: false
+        type: string
 
 permissions:
   contents: read
@@ -278,3 +292,139 @@ jobs:
         with:
           name: pr-review-artifacts
           path: .agent-harness/pr-review/
+
+  release-readiness-artifacts:
+    name: Release Readiness Artifacts
+    runs-on: ubuntu-latest
+    needs: verify
+    if: github.event_name == 'workflow_dispatch'
+
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.13"
+
+      - name: Set up uv
+        uses: astral-sh/setup-uv@v5
+        with:
+          enable-cache: true
+
+      - name: Sync dependencies
+        run: make sync
+
+      - name: Discover eligible release readiness repo
+        env:
+          GITHUB_REPOSITORY_NAME: ${{ github.event.repository.name }}
+          GITHUB_REPOSITORY_FULL_NAME: ${{ github.repository }}
+        run: |
+          mkdir -p .agent-harness/release-readiness
+          uv run python - <<'PY'
+          import json
+          import os
+          from pathlib import Path
+
+          from orgs_ai_harness.repo_registry import load_repo_entries
+
+          root = Path("org-agent-skills")
+          output_root = Path(".agent-harness/release-readiness")
+          repo_name = os.environ["GITHUB_REPOSITORY_NAME"]
+          repo_full_name = os.environ["GITHUB_REPOSITORY_FULL_NAME"]
+          targets = []
+          skipped = []
+
+          for entry in load_repo_entries(root / "harness.yml"):
+              artifact_root = root / "repos" / entry.id
+              repo_path = (root / entry.local_path).resolve() if entry.local_path else None
+              entry_url = entry.url or ""
+              matches_repo = (
+                  entry.name == repo_name
+                  or entry_url.endswith(f"/{repo_full_name}")
+                  or entry_url.endswith(f"/{repo_full_name}.git")
+                  or (repo_path is not None and repo_path.name == repo_name)
+              )
+              if not matches_repo:
+                  continue
+
+              reason = None
+              if not entry.active or entry.external:
+                  reason = "not active selected coverage"
+              elif entry.coverage_status not in {"approved-unverified", "verified"}:
+                  reason = f"status is {entry.coverage_status}"
+              elif not artifact_root.is_dir():
+                  reason = "missing repo artifact root"
+              elif not (artifact_root / "approval.yml").is_file():
+                  reason = "missing approval.yml"
+              elif not (artifact_root / "eval-report.yml").is_file():
+                  reason = "missing eval-report.yml"
+              elif not (artifact_root / "evals" / "onboarding.yml").is_file():
+                  reason = "missing evals/onboarding.yml"
+              elif repo_path is None or not repo_path.is_dir():
+                  reason = f"missing local repo path: {entry.local_path or '-'}"
+              else:
+                  targets.append(entry.id)
+
+              if reason is not None:
+                  skipped.append({"repo_id": entry.id, "reason": reason})
+
+          (output_root / "repo-id.txt").write_text("\n".join(targets[:1]) + ("\n" if targets else ""), encoding="utf-8")
+          (output_root / "discovery.json").write_text(
+              json.dumps(
+                  {
+                      "repository": repo_full_name,
+                      "targets": targets[:1],
+                      "skipped": skipped,
+                  },
+                  indent=2,
+                  sort_keys=True,
+              )
+              + "\n",
+              encoding="utf-8",
+          )
+          if targets:
+              print(f"Eligible release readiness repo: {targets[0]}")
+          else:
+              (output_root / "SKIPPED.md").write_text(
+                  "# Release Readiness Artifacts Skipped\n\n"
+                  "No eligible approved or verified local repo pack matched this workflow run.\n",
+                  encoding="utf-8",
+              )
+              print("No eligible release readiness repo found.")
+          PY
+
+      - name: Run release readiness artifact command
+        run: |
+          if [ ! -s .agent-harness/release-readiness/repo-id.txt ]; then
+            echo "No eligible release readiness repo found."
+            exit 0
+          fi
+
+          repo_id="$(cat .agent-harness/release-readiness/repo-id.txt)"
+          args=(
+            release readiness
+            --repo-id "$repo_id"
+            --json-path ".agent-harness/release-readiness/${repo_id}.json"
+            --markdown-path ".agent-harness/release-readiness/${repo_id}.md"
+          )
+
+          if [ -n "${{ github.event.inputs.version }}" ]; then
+            args+=(--version "${{ github.event.inputs.version }}")
+          fi
+          if [ -n "${{ github.event.inputs.base }}" ] && [ -n "${{ github.event.inputs.head }}" ]; then
+            args+=(--base "${{ github.event.inputs.base }}" --head "${{ github.event.inputs.head }}")
+          fi
+
+          echo "Running release readiness artifacts for ${repo_id}"
+          uv run harness "${args[@]}" > ".agent-harness/release-readiness/${repo_id}.stdout.txt"
+
+      - name: Upload release readiness artifacts
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: release-readiness-artifacts
+          path: .agent-harness/release-readiness/

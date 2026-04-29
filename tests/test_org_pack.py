@@ -289,6 +289,23 @@ class OrgPackFoundationTests(unittest.TestCase):
         self.assertNotIn("pull-requests: write", workflow)
         self.assertNotIn("issues: write", workflow)
 
+    def test_ci_workflow_uses_artifact_only_release_readiness_command(self) -> None:
+        workflow = (Path.cwd() / ".github" / "workflows" / "ci.yml").read_text(encoding="utf-8")
+
+        self.assertIn("workflow_dispatch:", workflow)
+        self.assertIn("release-readiness-artifacts:", workflow)
+        self.assertIn("github.event_name == 'workflow_dispatch'", workflow)
+        self.assertIn("fetch-depth: 0", workflow)
+        self.assertIn("Discover eligible release readiness repo", workflow)
+        self.assertIn('uv run harness "${args[@]}"', workflow)
+        self.assertIn("--json-path", workflow)
+        self.assertIn("--markdown-path", workflow)
+        self.assertIn(".agent-harness/release-readiness/", workflow)
+        self.assertIn("name: release-readiness-artifacts", workflow)
+        self.assertIn("actions/upload-artifact@v4", workflow)
+        self.assertNotIn("tags:", workflow)
+        self.assertNotIn("contents: write", workflow)
+
     def test_cli_init_github_profile_url_infers_org_name(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
             init_result = subprocess.run(
