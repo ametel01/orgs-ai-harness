@@ -65,3 +65,93 @@ jobs:
 
       - name: Run security gate
         run: make security
+
+  ci-eval-replay:
+    name: CI Eval Replay
+    runs-on: ubuntu-latest
+    needs: verify
+    continue-on-error: true
+
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.13"
+
+      - name: Set up uv
+        uses: astral-sh/setup-uv@v5
+        with:
+          enable-cache: true
+
+      - name: Sync dependencies
+        run: make sync
+
+      - name: Discover eligible eval repos
+        run: |
+          mkdir -p .agent-harness/ci-eval
+          uv run python - <<'PY'
+          import json
+          from pathlib import Path
+
+          from orgs_ai_harness.repo_registry import load_repo_entries
+
+          root = Path("org-agent-skills")
+          output_root = Path(".agent-harness/ci-eval")
+          targets = []
+          skipped = []
+
+          for entry in load_repo_entries(root / "harness.yml"):
+              artifact_root = root / "repos" / entry.id
+              repo_path = (root / entry.local_path).resolve() if entry.local_path else None
+              reason = None
+              if not entry.active or entry.external:
+                  reason = "not active selected coverage"
+              elif entry.coverage_status not in {"approved-unverified", "verified"}:
+                  reason = f"status is {entry.coverage_status}"
+              elif not (artifact_root / "approval.yml").is_file():
+                  reason = "missing approval.yml"
+              elif not (artifact_root / "evals" / "onboarding.yml").is_file():
+                  reason = "missing evals/onboarding.yml"
+              elif repo_path is None or not repo_path.is_dir():
+                  reason = f"missing local repo path: {entry.local_path or '-'}"
+              else:
+                  targets.append(entry.id)
+
+              if reason is not None:
+                  skipped.append({"repo_id": entry.id, "reason": reason})
+
+          (output_root / "repos.txt").write_text("\n".join(targets) + ("\n" if targets else ""), encoding="utf-8")
+          (output_root / "discovery.json").write_text(
+              json.dumps({"targets": targets, "skipped": skipped}, indent=2, sort_keys=True) + "\n",
+              encoding="utf-8",
+          )
+          print(f"Eligible CI eval repos: {', '.join(targets) if targets else 'none'}")
+          for item in skipped:
+              print(f"Skipped {item['repo_id']}: {item['reason']}")
+          PY
+
+      - name: Run CI eval replay
+        run: |
+          if [ ! -s .agent-harness/ci-eval/repos.txt ]; then
+            echo "No eligible CI eval repos found."
+            exit 0
+          fi
+
+          failed=0
+          while IFS= read -r repo_id; do
+            echo "Running CI eval replay for ${repo_id}"
+            if ! uv run harness eval "$repo_id" --ci --summary-path ".agent-harness/ci-eval/${repo_id}.json" > ".agent-harness/ci-eval/${repo_id}.stdout.json"; then
+              failed=1
+            fi
+          done < .agent-harness/ci-eval/repos.txt
+          exit "$failed"
+
+      - name: Upload CI eval replay artifacts
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: ci-eval-replay
+          path: .agent-harness/ci-eval/

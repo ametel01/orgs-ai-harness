@@ -262,6 +262,15 @@ class OrgPackFoundationTests(unittest.TestCase):
             self.assertEqual(validate_result.returncode, 0, validate_result.stderr)
             self.assertIn("Validation passed", validate_result.stdout)
 
+    def test_ci_workflow_uses_artifact_only_eval_replay_command(self) -> None:
+        workflow = (Path.cwd() / ".github" / "workflows" / "ci.yml").read_text(encoding="utf-8")
+
+        self.assertIn("ci-eval-replay:", workflow)
+        self.assertIn("continue-on-error: true", workflow)
+        self.assertIn('uv run harness eval "$repo_id" --ci --summary-path', workflow)
+        self.assertIn(".agent-harness/ci-eval/", workflow)
+        self.assertIn("actions/upload-artifact@v4", workflow)
+
     def test_cli_init_github_profile_url_infers_org_name(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
             init_result = subprocess.run(
