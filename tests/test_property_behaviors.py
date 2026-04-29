@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import re
+import string
 import tempfile
 from pathlib import Path
 
@@ -13,7 +14,7 @@ from orgs_ai_harness.repo_onboarding import is_sensitive_path
 from orgs_ai_harness.repo_registry import derive_repo_id_from_path, derive_repo_id_from_url
 
 SAFE_TEXT = st.text(
-    alphabet="abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789-_",
+    alphabet=string.ascii_letters + string.digits + "-_",
     min_size=1,
     max_size=24,
 ).filter(lambda value: value.strip("-_"))
