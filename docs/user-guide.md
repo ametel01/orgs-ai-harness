@@ -149,6 +149,61 @@ uv run harness reject <repo-id> --reason "Generated guidance is too uncertain"
 Approved packs move to `approved-unverified`. Protected artifacts should change
 through proposals rather than direct regeneration.
 
+## PR Review Artifacts
+
+Generate artifact-only review output for an explicit changed-file set:
+
+```sh
+uv run harness review changed-files \
+  --repo-id <repo-id> \
+  --files src/app.py tests/test_app.py \
+  --json-path .agent-harness/pr-review/<repo-id>.json \
+  --markdown-path .agent-harness/pr-review/<repo-id>.md
+```
+
+Use a newline-delimited file list for deterministic CI or scripted calls:
+
+```sh
+uv run harness review changed-files \
+  --repo-id <repo-id> \
+  --files-from .agent-harness/pr-review/changed-files.txt \
+  --json-path .agent-harness/pr-review/<repo-id>.json \
+  --markdown-path .agent-harness/pr-review/<repo-id>.md
+```
+
+Use local git refs when the repository checkout contains both commits:
+
+```sh
+uv run harness review changed-files \
+  --repo-id <repo-id> \
+  --base <base-ref> \
+  --head <head-ref> \
+  --json-path .agent-harness/pr-review/<repo-id>.json \
+  --markdown-path .agent-harness/pr-review/<repo-id>.md
+```
+
+Inputs must identify one registered, active, non-external repo with a local
+path. Changed files must be repo-relative and outside `.git`. The command does
+not execute suggested checks; it only writes review artifacts.
+
+The JSON artifact has `schema_version: 1` and stable sections for `changed_files`,
+`risk`, and `context`. Risk levels are `low`, `medium`, and `high`. Suggested
+commands come only from known local evidence such as generated script manifests,
+onboarding eval expected commands, scan hypothesis command candidates,
+deterministic repo manifests, and the built-in `harness validate <repo-id>`
+pattern. Suggested evals are stable eval ids whose expected files overlap the
+changed-file set. Missing skills, missing scan evidence, missing artifacts, and
+malformed artifacts are represented as context or warnings instead of review
+automation claims.
+
+The GitHub Actions `PR Review Artifacts` job runs on `pull_request`, discovers
+the registered repo matching the PR checkout, skips ineligible repos with
+`.agent-harness/pr-review/discovery.json` and `SKIPPED.md`, and uploads
+`.agent-harness/pr-review/` as `pr-review-artifacts`. The first workflow is
+artifact-only. It does not post comments, request reviewers, mutate GitHub
+state, or block merges based on risk classification; the job can still fail if
+the artifact command itself cannot run.
+
 ## Eval, Cache, And Export
 
 Run local eval replay after approval:

@@ -58,6 +58,7 @@ uv run harness approve <repo-id> --all
 uv run harness reject <repo-id> --reason "<reason>"
 uv run harness eval <repo-id>
 uv run harness eval <repo-id> --ci --summary-path .agent-harness/ci-eval/<repo-id>.json
+uv run harness review changed-files --repo-id <repo-id> --files src/app.py --json-path .agent-harness/pr-review/<repo-id>.json --markdown-path .agent-harness/pr-review/<repo-id>.md
 uv run harness cache refresh <repo-id>
 uv run harness export codex <repo-id>
 ```
@@ -95,6 +96,18 @@ warnings when human-approved guidance has not been fully verified.
 `harness eval <repo-id> --ci` is the workflow-safe replay path: it uses the
 deterministic fixture adapter, emits a stable JSON summary, writes eval report
 artifacts, and does not promote or rewrite approval lifecycle metadata.
+
+`harness review changed-files` is the artifact-only PR/change review path. It
+accepts explicit repo-relative files with `--files` or `--files-from`, or a
+local git diff with `--base <ref> --head <ref>`, then writes deterministic JSON
+and Markdown when `--json-path` and `--markdown-path` are provided. Review
+artifacts include changed files, risk items, suggested local checks, suggested
+eval ids, matched generated skills/resolver context, missing coverage, and
+warnings. The GitHub Actions `PR Review Artifacts` job runs this command for
+eligible approved or verified local repo packs and uploads
+`.agent-harness/pr-review/` as `pr-review-artifacts`. It is artifact-only: it
+does not post PR comments, request reviewers, mutate GitHub state, or block
+merges based on risk classification.
 
 Approved or verified packs can be refreshed into a repo-local
 `.agent-harness/cache/` directory and exported for a runtime target such as
@@ -156,7 +169,7 @@ Deeper workflow and boundary notes live in:
 - `tests/`: unittest-based regression tests, run through pytest by default.
 - `org-agent-skills/`: tracked harness-managed org pack and generated artifacts.
 - `.agent-harness/`: tracked repo-local cache/export artifacts for this harness
-  repo.
+  repo, plus CI-generated eval and PR review artifacts.
 - `.github/workflows/`: CI gates for verification and security.
 - `local-docs/`: ignored local planning and alignment notes.
 - `.venv/`, `.coverage*`, `.pytest_cache/`, `.ruff_cache/`, `*.egg-info/`:

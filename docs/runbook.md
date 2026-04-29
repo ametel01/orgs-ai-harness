@@ -223,6 +223,67 @@ Common CI replay failures:
   `missing evals`: rerun onboarding/review and approve the generated eval
   artifact.
 
+## PR Review Artifact Workflow
+
+Use PR review artifacts when a maintainer needs a local, reviewable summary of
+changed-file risk and relevant harness context without PR comments or GitHub
+state mutation.
+
+Manual artifact generation:
+
+```sh
+uv run harness review changed-files \
+  --repo-id <repo-id> \
+  --files src/app.py tests/test_app.py \
+  --json-path .agent-harness/pr-review/<repo-id>.json \
+  --markdown-path .agent-harness/pr-review/<repo-id>.md
+```
+
+Git-ref input for a local checkout:
+
+```sh
+uv run harness review changed-files \
+  --repo-id <repo-id> \
+  --base <base-ref> \
+  --head <head-ref> \
+  --json-path .agent-harness/pr-review/<repo-id>.json \
+  --markdown-path .agent-harness/pr-review/<repo-id>.md
+```
+
+The JSON artifact is the machine-readable contract. It includes
+`schema_version`, `status`, `repo_id`, `source`, optional `base`/`head`,
+`changed_files`, `risk`, and `context`. The `risk` section contains per-file
+`low`, `medium`, or `high` classifications, suggested local commands, suggested
+eval ids, and warnings. Suggested commands are recommendations only; they are
+not executed by the review command. The `context` section contains matched
+skills, scan evidence, unknowns, generated artifact statuses, changed-path
+classification, and missing coverage. The Markdown artifact is a concise human
+readout of the same contract for PR artifact inspection.
+
+The GitHub Actions `PR Review Artifacts` job runs only on pull requests. It
+checks out with full history, discovers the matching registered repo, and runs
+the review command with the PR base and head SHAs when the repo is active,
+non-external, approved or verified, has `approval.yml`, has a repo artifact
+root, and has a resolvable local path. It uploads `.agent-harness/pr-review/` as
+the `pr-review-artifacts` artifact. If no eligible repo is found, it exits
+successfully and uploads `discovery.json` plus `SKIPPED.md`.
+
+Interpretation guidance:
+
+- High risk means the changed path touches sensitive, CI, dependency, generated,
+  or similar high-impact surfaces. It is not a merge-blocking decision.
+- Suggested checks are derived from known local evidence and should be run by a
+  maintainer or future workflow before relying on the change.
+- Suggested eval ids identify existing onboarding evals whose expected files
+  overlap the change.
+- Missing coverage means generated skills, resolvers, scan evidence, or local
+  artifacts do not fully explain the changed path.
+
+The workflow is artifact-only. It does not post PR comments, request reviewers,
+label pull requests, update dashboards, mutate approvals, or block merges based
+on risk classification. A job failure means the artifact command or CI setup
+failed, not that an automated reviewer rejected the PR.
+
 ## Runtime Sessions
 
 Start the runtime vertical slice. The default permission mode is read-only:
