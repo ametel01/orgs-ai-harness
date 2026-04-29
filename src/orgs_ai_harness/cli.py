@@ -205,296 +205,11 @@ def main(argv: list[str] | None = None) -> int:
     args = parser.parse_args(argv)
 
     try:
-        if args.command == "setup":
-            return _run_setup_wizard(args, input_stream=sys.stdin, output_stream=sys.stdout)
-
-        if args.command == "org" and args.org_command == "init":
-            if args.name is not None:
-                root = init_org_pack(Path.cwd(), args.name)
-                print(f"Initialized org skill pack at {root}")
-                return 0
-
-            if args.github is not None:
-                owner = infer_github_owner(args.github)
-                root = init_org_pack(Path.cwd(), owner)
-                print(f"Initialized org skill pack for GitHub owner {owner} at {root}")
-                return 0
-
-            root = attach_org_pack(Path.cwd(), args.repo)
-            if root is None:
-                print("Recorded remote org skill pack attachment. No clone, push, or hosted setup was performed.")
-                return 0
-
-            result = validate_org_pack(root)
-            if not result.ok:
-                for error in result.errors:
-                    print(f"error: {error}", file=sys.stderr)
-                return 1
-
-            print(f"Attached org skill pack at {root}")
-            return 0
-
-        if args.command == "validate":
-            root = resolve_default_root(Path.cwd())
-            if args.repo_id is None:
-                result = validate_org_pack(root)
-            else:
-                result = validate_repo_onboarding(root, args.repo_id)
-            if result.ok:
-                if args.repo_id is None:
-                    print(f"Validation passed for {root}")
-                else:
-                    print(f"Validation passed for {args.repo_id} at {root}")
-                return 0
-            for error in result.errors:
-                print(f"error: {error}", file=sys.stderr)
-            return 1
-
-        if args.command == "onboard":
-            root = resolve_default_root(Path.cwd())
-            if args.scan_only:
-                result = scan_repo_only(root, args.repo_id)
-                print(f"Scanned repo {result.repo_id} into {result.artifact_root}")
-                return 0
-            result = onboard_repo(root, args.repo_id, skill_generator=args.llm, skill_target=args.skill_target)
-            print(f"Generated draft pack for repo {result.repo_id} into {result.artifact_root}")
-            return 0
-
-        if args.command == "approve":
-            root = resolve_default_root(Path.cwd())
-            exclusions = tuple(args.exclude or ())
-            if not args.all and not exclusions:
-                print(render_approval_review(root, args.repo_id), end="")
-                return 0
-            result = approve_repo(root, args.repo_id, exclusions=exclusions, rationale=args.rationale)
-            print(
-                f"Approved {len(result.approved_artifacts)} artifact(s) for repo {result.repo_id}; "
-                f"excluded={len(result.excluded_artifacts)}; status=approved-unverified"
-            )
-            return 0
-
-        if args.command == "reject":
-            root = resolve_default_root(Path.cwd())
-            result = reject_repo(root, args.repo_id, rationale=args.reason)
-            print(f"Rejected draft pack for repo {result.repo_id}; status=needs-investigation")
-            return 0
-
-        if args.command == "eval":
-            root = resolve_default_root(Path.cwd())
-            result = run_eval(root, args.repo_id, adapter_id=args.adapter, development=args.development)
-            print(
-                f"Evaluated repo {result.repo_id}; baseline_pass_rate={result.baseline_pass_rate:.2f}; "
-                f"skill_pack_pass_rate={result.skill_pack_pass_rate:.2f}; "
-                f"rediscovery_cost_delta={result.rediscovery_cost_delta:.2f}; status={result.status}; "
-                f"report={result.report_path}"
-            )
-            return 0
-
-        if args.command == "cache" and args.cache_command == "refresh":
-            root = resolve_default_root(Path.cwd())
-            result = refresh_cache(root, args.repo_id)
-            print(f"Refreshed cache for {result.repo_id}; pack_ref={result.pack_ref}; cache={result.cache_root}")
-            return 0
-
-        if args.command == "export":
-            root = resolve_default_root(Path.cwd())
-            result = export_cached_pack(
-                root,
-                args.target,
-                args.repo_id,
-                allow_draft=args.allow_draft,
-                development=args.development,
-            )
-            print(
-                f"Exported {result.target} pack for {result.repo_id}; "
-                f"status={result.status}; export={result.export_root}"
-            )
-            return 0
-
-        if args.command == "explain":
-            root = resolve_default_root(Path.cwd())
-            print(render_explain(root, args.repo_id), end="")
-            return 0
-
-        if args.command == "improve":
-            root = resolve_default_root(Path.cwd())
-            result = improve_repo(root, args.repo_id)
-            if result.proposal_id is None:
-                print(f"No proposal for {result.repo_id}; {result.reason}.")
-                return 0
-            print(f"Created proposal {result.proposal_id} for {result.repo_id}: {result.proposal_root}")
-            return 0
-
-        if args.command == "refresh":
-            root = resolve_default_root(Path.cwd())
-            result = refresh_repo(root, args.repo_id)
-            if result.proposal_id is None:
-                print(f"No proposal for {result.repo_id}; {result.reason}.")
-                return 0
-            print(
-                f"Created refresh proposal {result.proposal_id} for {result.repo_id}; "
-                f"{result.previous_commit}..{result.current_commit}"
-            )
-            return 0
-
-        if args.command == "proposals":
-            root = resolve_default_root(Path.cwd())
-            if args.proposals_command == "list":
-                proposals = list_proposals(root)
-                if not proposals:
-                    print("No proposals.")
-                    return 0
-                for proposal in proposals:
-                    print(
-                        f"{proposal.proposal_id}\t{proposal.repo_id}\t"
-                        f"status={proposal.status}\trisk={proposal.risk}\t{proposal.summary}"
-                    )
-                return 0
-            if args.proposals_command == "show":
-                print(render_proposal_show(root, args.proposal_id), end="")
-                return 0
-            if args.proposals_command == "apply":
-                result = apply_proposal(root, args.proposal_id, approved=args.yes)
-                print(
-                    f"Applied proposal {result.proposal_id} for {result.repo_id}; "
-                    f"changed={len(result.changed_artifacts)}"
-                )
-                return 0
-            if args.proposals_command == "reject":
-                result = reject_proposal(root, args.proposal_id, reason=args.reason)
-                print(f"Rejected proposal {result.proposal_id} for {result.repo_id}; status={result.status}")
-                return 0
-
-        if args.command == "repo":
-            if args.repo_command == "add":
-                root = _resolve_existing_org_pack_root(Path.cwd())
-                entry = add_repo(
-                    root,
-                    Path.cwd(),
-                    args.path_or_url,
-                    purpose=args.purpose,
-                    owner=args.owner,
-                    default_branch=args.default_branch,
-                    external=args.external,
-                )
-                print(f"Registered repo {entry.id} at {_repo_location(entry)}")
-                return 0
-
-            if args.repo_command == "discover":
-                source_count = sum(item is not None for item in (args.github_source, args.github_org, args.github_user))
-                if source_count > 1:
-                    raise RepoDiscoveryError(
-                        "repo discover accepts only one GitHub source: a URL, --github-org, or --github-user; "
-                        "only one of --github-org or --github-user may be used"
-                    )
-                if source_count == 0:
-                    raise RepoDiscoveryError(
-                        "repo discover requires a GitHub profile URL, --github-org, or --github-user"
-                    )
-                if args.select is None and not sys.stdin.isatty():
-                    raise RepoDiscoveryError("repo discover requires --select in non-interactive use")
-
-                if args.github_source is not None:
-                    target = infer_github_owner(args.github_source)
-                    discovery_provider = discover_github_user
-                elif args.github_org is not None:
-                    target = args.github_org
-                    discovery_provider = discover_github_org
-                else:
-                    target = args.github_user
-                    discovery_provider = discover_github_user
-
-                root, initialized = _resolve_or_init_org_pack_root(Path.cwd(), target)
-                if initialized:
-                    print(f"Initialized org skill pack for GitHub owner {target} at {root}")
-
-                discovered = discovery_provider(target)
-
-                filtered = filter_discovered_repos(
-                    discovered,
-                    include_archived=args.include_archived,
-                    include_forks=args.include_forks,
-                )
-                filtered_out = tuple(repo for repo in discovered if repo not in filtered)
-                if args.select is not None:
-                    selected = select_discovered_repos(filtered, args.select, filtered_out=filtered_out)
-                else:
-                    print(f"Discovered GitHub repositories for {target}.")
-                    selected = select_discovered_repos_interactively(
-                        filtered,
-                        input_stream=sys.stdin,
-                        output_stream=sys.stdout,
-                    )
-                local_paths = None
-                if args.clone:
-                    local_paths = clone_discovered_repos(root, Path.cwd(), selected, args.clone_dir)
-                elif args.select is None and _prompt_yes_no(
-                    "Clone selected repositories now? Project-specific generation needs local paths.",
-                    input_stream=sys.stdin,
-                    output_stream=sys.stdout,
-                    default=True,
-                ):
-                    clone_dir = _prompt_line(
-                        "Clone directory",
-                        input_stream=sys.stdin,
-                        output_stream=sys.stdout,
-                        default="./covered-repos",
-                    )
-                    local_paths = clone_discovered_repos(root, Path.cwd(), selected, clone_dir)
-                entries, reused_entries = _register_or_reuse_discovered_repos(
-                    root,
-                    selected,
-                    local_paths=local_paths,
-                )
-                for entry in reused_entries:
-                    print(f"Repo {entry.id} is already registered at {_repo_location(entry)}")
-                reused_ids = {entry.id for entry in reused_entries}
-                for entry in entries:
-                    if entry.id in reused_ids:
-                        continue
-                    print(f"Registered repo {entry.id} at {_repo_location(entry)}")
-                if args.select is None:
-                    _run_post_registration_wizard(
-                        root,
-                        entries,
-                        input_stream=sys.stdin,
-                        output_stream=sys.stdout,
-                        skill_generator=args.llm,
-                        skill_target=args.skill_target,
-                    )
-                return 0
-
-            if args.repo_command == "set-path":
-                root = _resolve_existing_org_pack_root(Path.cwd())
-                entry = set_repo_path(root, Path.cwd(), args.repo_id, args.path)
-                print(f"Updated repo {entry.id} path to {entry.local_path}")
-                return 0
-
-            if args.repo_command == "deactivate":
-                root = _resolve_existing_org_pack_root(Path.cwd())
-                entry = deactivate_repo(root, args.repo_id, args.reason)
-                print(f"Deactivated repo {entry.id}: {entry.deactivation_reason}")
-                return 0
-
-            if args.repo_command == "remove":
-                root = _resolve_existing_org_pack_root(Path.cwd())
-                entry = remove_repo(root, args.repo_id, args.reason, force=args.force)
-                print(f"Removed repo {entry.id} from registry: {args.reason.strip()}")
-                return 0
-
-            if args.repo_command == "list":
-                root = _resolve_existing_org_pack_root(Path.cwd())
-                entries = load_repo_entries(root / "harness.yml")
-                if not entries:
-                    print("No repositories registered.")
-                    return 0
-                for entry in entries:
-                    print(
-                        f"{entry.id}\t{_repo_location(entry)}\t"
-                        f"active={str(entry.active).lower()}\tstatus={entry.coverage_status}"
-                    )
-                return 0
-
+        handler = _handler_for_command(args.command)
+        if handler is None:
+            parser.error("unsupported command")
+            return 2
+        return handler(args)
     except (
         OrgPackError,
         RepoRegistryError,
@@ -509,8 +224,329 @@ def main(argv: list[str] | None = None) -> int:
         print(f"error: {exc}", file=sys.stderr)
         return 1
 
-    parser.error("unsupported command")
+
+def _handler_for_command(command: str):
+    handlers = {
+        "setup": _handle_setup_command,
+        "org": _handle_org_command,
+        "validate": _handle_validate_command,
+        "onboard": _handle_onboard_command,
+        "approve": _handle_approve_command,
+        "reject": _handle_reject_command,
+        "eval": _handle_eval_command,
+        "cache": _handle_cache_command,
+        "export": _handle_export_command,
+        "explain": _handle_explain_command,
+        "improve": _handle_improve_command,
+        "refresh": _handle_refresh_command,
+        "proposals": _handle_proposals_command,
+        "repo": _handle_repo_command,
+    }
+    return handlers.get(command)
+
+
+def _handle_setup_command(args: argparse.Namespace) -> int:
+    return _run_setup_wizard(args, input_stream=sys.stdin, output_stream=sys.stdout)
+
+
+def _handle_org_command(args: argparse.Namespace) -> int:
+    if args.org_command != "init":
+        return 2
+    if args.name is not None:
+        root = init_org_pack(Path.cwd(), args.name)
+        print(f"Initialized org skill pack at {root}")
+        return 0
+
+    if args.github is not None:
+        owner = infer_github_owner(args.github)
+        root = init_org_pack(Path.cwd(), owner)
+        print(f"Initialized org skill pack for GitHub owner {owner} at {root}")
+        return 0
+
+    root = attach_org_pack(Path.cwd(), args.repo)
+    if root is None:
+        print("Recorded remote org skill pack attachment. No clone, push, or hosted setup was performed.")
+        return 0
+
+    result = validate_org_pack(root)
+    if not result.ok:
+        for error in result.errors:
+            print(f"error: {error}", file=sys.stderr)
+        return 1
+
+    print(f"Attached org skill pack at {root}")
+    return 0
+
+
+def _handle_validate_command(args: argparse.Namespace) -> int:
+    root = resolve_default_root(Path.cwd())
+    if args.repo_id is None:
+        result = validate_org_pack(root)
+    else:
+        result = validate_repo_onboarding(root, args.repo_id)
+    if result.ok:
+        if args.repo_id is None:
+            print(f"Validation passed for {root}")
+        else:
+            print(f"Validation passed for {args.repo_id} at {root}")
+        return 0
+    for error in result.errors:
+        print(f"error: {error}", file=sys.stderr)
+    return 1
+
+
+def _handle_onboard_command(args: argparse.Namespace) -> int:
+    root = resolve_default_root(Path.cwd())
+    if args.scan_only:
+        result = scan_repo_only(root, args.repo_id)
+        print(f"Scanned repo {result.repo_id} into {result.artifact_root}")
+        return 0
+    result = onboard_repo(root, args.repo_id, skill_generator=args.llm, skill_target=args.skill_target)
+    print(f"Generated draft pack for repo {result.repo_id} into {result.artifact_root}")
+    return 0
+
+
+def _handle_approve_command(args: argparse.Namespace) -> int:
+    root = resolve_default_root(Path.cwd())
+    exclusions = tuple(args.exclude or ())
+    if not args.all and not exclusions:
+        print(render_approval_review(root, args.repo_id), end="")
+        return 0
+    result = approve_repo(root, args.repo_id, exclusions=exclusions, rationale=args.rationale)
+    print(
+        f"Approved {len(result.approved_artifacts)} artifact(s) for repo {result.repo_id}; "
+        f"excluded={len(result.excluded_artifacts)}; status=approved-unverified"
+    )
+    return 0
+
+
+def _handle_reject_command(args: argparse.Namespace) -> int:
+    root = resolve_default_root(Path.cwd())
+    result = reject_repo(root, args.repo_id, rationale=args.reason)
+    print(f"Rejected draft pack for repo {result.repo_id}; status=needs-investigation")
+    return 0
+
+
+def _handle_eval_command(args: argparse.Namespace) -> int:
+    root = resolve_default_root(Path.cwd())
+    result = run_eval(root, args.repo_id, adapter_id=args.adapter, development=args.development)
+    print(
+        f"Evaluated repo {result.repo_id}; baseline_pass_rate={result.baseline_pass_rate:.2f}; "
+        f"skill_pack_pass_rate={result.skill_pack_pass_rate:.2f}; "
+        f"rediscovery_cost_delta={result.rediscovery_cost_delta:.2f}; status={result.status}; "
+        f"report={result.report_path}"
+    )
+    return 0
+
+
+def _handle_cache_command(args: argparse.Namespace) -> int:
+    if args.cache_command != "refresh":
+        return 2
+    root = resolve_default_root(Path.cwd())
+    result = refresh_cache(root, args.repo_id)
+    print(f"Refreshed cache for {result.repo_id}; pack_ref={result.pack_ref}; cache={result.cache_root}")
+    return 0
+
+
+def _handle_export_command(args: argparse.Namespace) -> int:
+    root = resolve_default_root(Path.cwd())
+    result = export_cached_pack(
+        root,
+        args.target,
+        args.repo_id,
+        allow_draft=args.allow_draft,
+        development=args.development,
+    )
+    print(f"Exported {result.target} pack for {result.repo_id}; status={result.status}; export={result.export_root}")
+    return 0
+
+
+def _handle_explain_command(args: argparse.Namespace) -> int:
+    root = resolve_default_root(Path.cwd())
+    print(render_explain(root, args.repo_id), end="")
+    return 0
+
+
+def _handle_improve_command(args: argparse.Namespace) -> int:
+    root = resolve_default_root(Path.cwd())
+    result = improve_repo(root, args.repo_id)
+    if result.proposal_id is None:
+        print(f"No proposal for {result.repo_id}; {result.reason}.")
+        return 0
+    print(f"Created proposal {result.proposal_id} for {result.repo_id}: {result.proposal_root}")
+    return 0
+
+
+def _handle_refresh_command(args: argparse.Namespace) -> int:
+    root = resolve_default_root(Path.cwd())
+    result = refresh_repo(root, args.repo_id)
+    if result.proposal_id is None:
+        print(f"No proposal for {result.repo_id}; {result.reason}.")
+        return 0
+    print(
+        f"Created refresh proposal {result.proposal_id} for {result.repo_id}; "
+        f"{result.previous_commit}..{result.current_commit}"
+    )
+    return 0
+
+
+def _handle_proposals_command(args: argparse.Namespace) -> int:
+    root = resolve_default_root(Path.cwd())
+    if args.proposals_command == "list":
+        proposals = list_proposals(root)
+        if not proposals:
+            print("No proposals.")
+            return 0
+        for proposal in proposals:
+            print(
+                f"{proposal.proposal_id}\t{proposal.repo_id}\t"
+                f"status={proposal.status}\trisk={proposal.risk}\t{proposal.summary}"
+            )
+        return 0
+    if args.proposals_command == "show":
+        print(render_proposal_show(root, args.proposal_id), end="")
+        return 0
+    if args.proposals_command == "apply":
+        result = apply_proposal(root, args.proposal_id, approved=args.yes)
+        print(f"Applied proposal {result.proposal_id} for {result.repo_id}; changed={len(result.changed_artifacts)}")
+        return 0
+    if args.proposals_command == "reject":
+        result = reject_proposal(root, args.proposal_id, reason=args.reason)
+        print(f"Rejected proposal {result.proposal_id} for {result.repo_id}; status={result.status}")
+        return 0
     return 2
+
+
+def _handle_repo_command(args: argparse.Namespace) -> int:
+    if args.repo_command == "add":
+        return _handle_repo_add_command(args)
+    if args.repo_command == "discover":
+        return _handle_repo_discover_command(args)
+    if args.repo_command == "set-path":
+        root = _resolve_existing_org_pack_root(Path.cwd())
+        entry = set_repo_path(root, Path.cwd(), args.repo_id, args.path)
+        print(f"Updated repo {entry.id} path to {entry.local_path}")
+        return 0
+    if args.repo_command == "deactivate":
+        root = _resolve_existing_org_pack_root(Path.cwd())
+        entry = deactivate_repo(root, args.repo_id, args.reason)
+        print(f"Deactivated repo {entry.id}: {entry.deactivation_reason}")
+        return 0
+    if args.repo_command == "remove":
+        root = _resolve_existing_org_pack_root(Path.cwd())
+        entry = remove_repo(root, args.repo_id, args.reason, force=args.force)
+        print(f"Removed repo {entry.id} from registry: {args.reason.strip()}")
+        return 0
+    if args.repo_command == "list":
+        root = _resolve_existing_org_pack_root(Path.cwd())
+        entries = load_repo_entries(root / "harness.yml")
+        if not entries:
+            print("No repositories registered.")
+            return 0
+        for entry in entries:
+            print(
+                f"{entry.id}\t{_repo_location(entry)}\t"
+                f"active={str(entry.active).lower()}\tstatus={entry.coverage_status}"
+            )
+        return 0
+    return 2
+
+
+def _handle_repo_add_command(args: argparse.Namespace) -> int:
+    root = _resolve_existing_org_pack_root(Path.cwd())
+    entry = add_repo(
+        root,
+        Path.cwd(),
+        args.path_or_url,
+        purpose=args.purpose,
+        owner=args.owner,
+        default_branch=args.default_branch,
+        external=args.external,
+    )
+    print(f"Registered repo {entry.id} at {_repo_location(entry)}")
+    return 0
+
+
+def _handle_repo_discover_command(args: argparse.Namespace) -> int:
+    source_count = sum(item is not None for item in (args.github_source, args.github_org, args.github_user))
+    if source_count > 1:
+        raise RepoDiscoveryError(
+            "repo discover accepts only one GitHub source: a URL, --github-org, or --github-user; "
+            "only one of --github-org or --github-user may be used"
+        )
+    if source_count == 0:
+        raise RepoDiscoveryError("repo discover requires a GitHub profile URL, --github-org, or --github-user")
+    if args.select is None and not sys.stdin.isatty():
+        raise RepoDiscoveryError("repo discover requires --select in non-interactive use")
+
+    if args.github_source is not None:
+        target = infer_github_owner(args.github_source)
+        discovery_provider = discover_github_user
+    elif args.github_org is not None:
+        target = args.github_org
+        discovery_provider = discover_github_org
+    else:
+        target = args.github_user
+        discovery_provider = discover_github_user
+
+    root, initialized = _resolve_or_init_org_pack_root(Path.cwd(), target)
+    if initialized:
+        print(f"Initialized org skill pack for GitHub owner {target} at {root}")
+
+    discovered = discovery_provider(target)
+    filtered = filter_discovered_repos(
+        discovered,
+        include_archived=args.include_archived,
+        include_forks=args.include_forks,
+    )
+    filtered_out = tuple(repo for repo in discovered if repo not in filtered)
+    if args.select is not None:
+        selected = select_discovered_repos(filtered, args.select, filtered_out=filtered_out)
+    else:
+        print(f"Discovered GitHub repositories for {target}.")
+        selected = select_discovered_repos_interactively(
+            filtered,
+            input_stream=sys.stdin,
+            output_stream=sys.stdout,
+        )
+    local_paths = None
+    if args.clone:
+        local_paths = clone_discovered_repos(root, Path.cwd(), selected, args.clone_dir)
+    elif args.select is None and _prompt_yes_no(
+        "Clone selected repositories now? Project-specific generation needs local paths.",
+        input_stream=sys.stdin,
+        output_stream=sys.stdout,
+        default=True,
+    ):
+        clone_dir = _prompt_line(
+            "Clone directory",
+            input_stream=sys.stdin,
+            output_stream=sys.stdout,
+            default="./covered-repos",
+        )
+        local_paths = clone_discovered_repos(root, Path.cwd(), selected, clone_dir)
+    entries, reused_entries = _register_or_reuse_discovered_repos(
+        root,
+        selected,
+        local_paths=local_paths,
+    )
+    for entry in reused_entries:
+        print(f"Repo {entry.id} is already registered at {_repo_location(entry)}")
+    reused_ids = {entry.id for entry in reused_entries}
+    for entry in entries:
+        if entry.id in reused_ids:
+            continue
+        print(f"Registered repo {entry.id} at {_repo_location(entry)}")
+    if args.select is None:
+        _run_post_registration_wizard(
+            root,
+            entries,
+            input_stream=sys.stdin,
+            output_stream=sys.stdout,
+            skill_generator=args.llm,
+            skill_target=args.skill_target,
+        )
+    return 0
 
 
 def _repo_location(entry: RepoEntry) -> str:
