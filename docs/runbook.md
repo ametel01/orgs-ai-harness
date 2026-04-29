@@ -284,6 +284,76 @@ label pull requests, update dashboards, mutate approvals, or block merges based
 on risk classification. A job failure means the artifact command or CI setup
 failed, not that an automated reviewer rejected the PR.
 
+## Release Readiness Artifact Workflow
+
+Use release readiness artifacts when maintainers need a local, reviewable
+release summary without publishing, deployment, tags, GitHub Releases, comments,
+or merge-blocking policy.
+
+Manual artifact generation:
+
+```sh
+uv run harness release readiness \
+  --repo-id <repo-id> \
+  --version v1.2.3 \
+  --files CHANGELOG.md package.json \
+  --json-path .agent-harness/release-readiness/<repo-id>.json \
+  --markdown-path .agent-harness/release-readiness/<repo-id>.md
+```
+
+Git-ref input for a local checkout:
+
+```sh
+uv run harness release readiness \
+  --repo-id <repo-id> \
+  --version v1.2.3 \
+  --base <base-ref> \
+  --head <head-ref> \
+  --json-path .agent-harness/release-readiness/<repo-id>.json \
+  --markdown-path .agent-harness/release-readiness/<repo-id>.md
+```
+
+The JSON artifact is the machine-readable contract. It includes
+`schema_version`, `status`, `repo_id`, `release`, `lifecycle`, `context`,
+`release_evidence`, `missing_evidence`, and `risk`. The `risk` section contains
+`low`, `medium`, or `high` items, suggested local commands, suggested eval ids,
+and warnings. Suggested commands are not executed by the release readiness
+command. The Markdown artifact is the human readout for artifact inspection.
+
+The GitHub Actions `Release Readiness Artifacts` job runs only through
+`workflow_dispatch`. It checks out with full history, discovers the matching
+registered repo, and runs the release readiness command when the repo is active,
+non-external, approved or verified, has `approval.yml`, has `eval-report.yml`,
+has `evals/onboarding.yml`, has a repo artifact root, and has a resolvable local
+path. It uploads `.agent-harness/release-readiness/` as the
+`release-readiness-artifacts` artifact. If no eligible repo is found, it exits
+successfully and uploads `discovery.json` plus `SKIPPED.md`.
+
+Interpretation guidance:
+
+- High risk means the release touches dependency, CI, migration, deployment,
+  unverified pack, blocking unknown, approval metadata, or missing eval evidence.
+  It is not a publish or merge-blocking decision.
+- Suggested checks are derived from known local evidence and should be run by a
+  maintainer or future workflow before relying on the release.
+- Suggested eval ids identify existing onboarding evals whose expected files
+  overlap the release changed-file set.
+- Missing evidence means the local repo or generated pack does not expose
+  expected release context such as changelog, version, CI, eval, approval, scan,
+  skill, or resolver artifacts.
+
+Common release readiness failures:
+
+- `repo id is not registered`: run `uv run harness repo list` and use the exact
+  `id`.
+- `repo is an external dependency reference` or `repo is not active selected
+  coverage`: release readiness only supports selected local coverage.
+- `repo <id> has no local path` or `repo path does not exist`: set or repair the
+  local path before generating artifacts.
+- `release readiness requires both --base and --head`: pass both refs or neither.
+- `cannot resolve base/head ref`: fetch the relevant commits or use `--files` /
+  `--files-from` instead.
+
 ## Runtime Sessions
 
 Start the runtime vertical slice. The default permission mode is read-only:

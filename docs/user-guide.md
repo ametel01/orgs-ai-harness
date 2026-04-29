@@ -204,6 +204,66 @@ artifact-only. It does not post comments, request reviewers, mutate GitHub
 state, or block merges based on risk classification; the job can still fail if
 the artifact command itself cannot run.
 
+## Release Readiness Artifacts
+
+Generate artifact-only release readiness output for one registered repo:
+
+```sh
+uv run harness release readiness \
+  --repo-id <repo-id> \
+  --version v1.2.3 \
+  --files CHANGELOG.md package.json \
+  --json-path .agent-harness/release-readiness/<repo-id>.json \
+  --markdown-path .agent-harness/release-readiness/<repo-id>.md
+```
+
+Use a newline-delimited changed-file list for deterministic scripted calls:
+
+```sh
+uv run harness release readiness \
+  --repo-id <repo-id> \
+  --version v1.2.3 \
+  --files-from .agent-harness/release-readiness/changed-files.txt \
+  --json-path .agent-harness/release-readiness/<repo-id>.json \
+  --markdown-path .agent-harness/release-readiness/<repo-id>.md
+```
+
+Use local git refs when the checkout contains both commits:
+
+```sh
+uv run harness release readiness \
+  --repo-id <repo-id> \
+  --version v1.2.3 \
+  --base <base-ref> \
+  --head <head-ref> \
+  --json-path .agent-harness/release-readiness/<repo-id>.json \
+  --markdown-path .agent-harness/release-readiness/<repo-id>.md
+```
+
+Eligible repos must be registered, active, non-external, and have a local path.
+The GitHub Actions workflow also requires an approved or verified local pack
+with `approval.yml`, `eval-report.yml`, and `evals/onboarding.yml`. Missing
+changelog, version, lockfile, CI, migration, deployment, approval, eval, scan,
+skill, or resolver evidence is represented in the artifact as missing evidence,
+warnings, or risk items instead of being treated as release automation.
+
+The JSON artifact has `schema_version: 1` and stable sections for `release`,
+`lifecycle`, `context`, `release_evidence`, `missing_evidence`, and `risk`.
+Risk levels are `low`, `medium`, and `high`. Suggested commands come only from
+known local evidence and are recommendations; the command does not execute
+them. Suggested evals are existing onboarding eval ids whose expected files
+overlap the release changed-file set. The Markdown artifact is a concise human
+readout of the same data.
+
+The GitHub Actions `Release Readiness Artifacts` job runs only from
+`workflow_dispatch`. It discovers the registered repo matching the current
+checkout, skips ineligible repos with
+`.agent-harness/release-readiness/discovery.json` and `SKIPPED.md`, and uploads
+`.agent-harness/release-readiness/` as `release-readiness-artifacts`. The first
+workflow is artifact-only. It does not tag, publish, deploy, create GitHub
+Releases, post comments, request reviewers, mutate GitHub state, or block
+merges based on risk classification.
+
 ## Eval, Cache, And Export
 
 Run local eval replay after approval:

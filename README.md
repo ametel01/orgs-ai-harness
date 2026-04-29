@@ -59,6 +59,7 @@ uv run harness reject <repo-id> --reason "<reason>"
 uv run harness eval <repo-id>
 uv run harness eval <repo-id> --ci --summary-path .agent-harness/ci-eval/<repo-id>.json
 uv run harness review changed-files --repo-id <repo-id> --files src/app.py --json-path .agent-harness/pr-review/<repo-id>.json --markdown-path .agent-harness/pr-review/<repo-id>.md
+uv run harness release readiness --repo-id <repo-id> --version v1.2.3 --files CHANGELOG.md --json-path .agent-harness/release-readiness/<repo-id>.json --markdown-path .agent-harness/release-readiness/<repo-id>.md
 uv run harness cache refresh <repo-id>
 uv run harness export codex <repo-id>
 ```
@@ -108,6 +109,21 @@ eligible approved or verified local repo packs and uploads
 `.agent-harness/pr-review/` as `pr-review-artifacts`. It is artifact-only: it
 does not post PR comments, request reviewers, mutate GitHub state, or block
 merges based on risk classification.
+
+`harness release readiness` is the artifact-only release review path. It
+requires one registered, active, non-external repo with a local path. Optional
+release inputs include `--version`, explicit changed files with `--files` or
+`--files-from`, and a local git range with `--base <ref> --head <ref>`.
+When `--json-path` and `--markdown-path` are provided, it writes deterministic
+artifacts with schema version 1. Artifacts include release inputs, lifecycle
+status, local release evidence, missing evidence, risk items, suggested local
+checks, suggested eval ids, and warnings. Suggested checks and evals are not
+executed. The GitHub Actions `Release Readiness Artifacts` job is
+`workflow_dispatch` only, uploads `.agent-harness/release-readiness/` as
+`release-readiness-artifacts`, and skips ineligible repo states with
+`discovery.json` plus `SKIPPED.md`. This first workflow does not tag, publish,
+deploy, create GitHub Releases, post comments, request reviewers, or block
+merges.
 
 Approved or verified packs can be refreshed into a repo-local
 `.agent-harness/cache/` directory and exported for a runtime target such as
@@ -169,7 +185,7 @@ Deeper workflow and boundary notes live in:
 - `tests/`: unittest-based regression tests, run through pytest by default.
 - `org-agent-skills/`: tracked harness-managed org pack and generated artifacts.
 - `.agent-harness/`: tracked repo-local cache/export artifacts for this harness
-  repo, plus CI-generated eval and PR review artifacts.
+  repo, plus CI-generated eval, PR review, and release readiness artifacts.
 - `.github/workflows/`: CI gates for verification and security.
 - `local-docs/`: ignored local planning and alignment notes.
 - `.venv/`, `.coverage*`, `.pytest_cache/`, `.ruff_cache/`, `*.egg-info/`:
