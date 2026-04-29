@@ -86,6 +86,11 @@ Approved or verified packs can be refreshed into a repo-local
 Codex. Draft and investigation states require explicit development flags before
 export.
 
+Deeper workflow and boundary notes live in:
+
+- [Architecture](docs/architecture.md)
+- [Runbook](docs/runbook.md)
+
 ## Directory Map
 
 - `src/orgs_ai_harness/`: first-party harness source.
@@ -113,7 +118,7 @@ make typecheck  # Pyright basic mode
 make test       # pytest
 make coverage   # pytest coverage with subprocess tracing, fail_under=81
 make verify     # lint, typecheck, coverage
-make security   # pip-audit and detect-secrets baseline check
+make security   # pip-audit, Bandit, and detect-secrets baseline check
 make build      # uv build
 ```
 
