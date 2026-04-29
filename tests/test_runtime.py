@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import os
+import shlex
 import subprocess
 import sys
 import tempfile
@@ -436,6 +437,46 @@ class RuntimeContextAndLoopTests(unittest.TestCase):
 
         return CodexLocalRuntimeAdapter(command_argv=("fake-codex",), runner=fake_runner)
 
+    def write_fake_codex_script(self, workspace: Path) -> Path:
+        script = workspace / "fake_codex.py"
+        script.write_text(
+            "\n".join(
+                [
+                    "import os",
+                    "import sys",
+                    "import time",
+                    "mode = os.environ.get('FAKE_CODEX_MODE', 'sequence')",
+                    "sys.stdin.read()",
+                    "if mode == 'malformed':",
+                    "    print('not json')",
+                    "    raise SystemExit(0)",
+                    "if mode == 'nonzero':",
+                    "    sys.stderr.write('model failed\\n')",
+                    "    raise SystemExit(7)",
+                    "if mode == 'timeout':",
+                    "    time.sleep(2)",
+                    '    print(\'{"type":"final_response","summary":"late"}\')',
+                    "    raise SystemExit(0)",
+                    "state_path = os.environ['FAKE_CODEX_STATE']",
+                    "try:",
+                    "    with open(state_path, encoding='utf-8') as handle:",
+                    "        index = int(handle.read() or '0')",
+                    "except FileNotFoundError:",
+                    "    index = 0",
+                    "outputs = [",
+                    '    \'{"type":"tool_call","tool_id":"local.cwd","tool_input":{}}\',',
+                    '    \'{"type":"final_response","summary":"codex final"}\',',
+                    "]",
+                    "with open(state_path, 'w', encoding='utf-8') as handle:",
+                    "    handle.write(str(index + 1))",
+                    "print(outputs[index] if index < len(outputs) else outputs[-1])",
+                    "",
+                ]
+            ),
+            encoding="utf-8",
+        )
+        return script
+
     def test_context_assembly_discovers_instructions_cache_and_bounded_skills(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
             workspace = Path(tmp)
@@ -612,6 +653,84 @@ class RuntimeContextAndLoopTests(unittest.TestCase):
             unknown_events = store.read_session("unknown-tool").events
             self.assertEqual(unknown_events[-2].event_type, "error")
             self.assertEqual(unknown_events[-1].event_type, "final_response")
+
+    def test_cli_codex_local_uses_fake_subprocess_for_success_and_failures(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            workspace = Path(tmp)
+            fake_codex = self.write_fake_codex_script(workspace)
+            state_path = workspace / "fake_codex_state.txt"
+            env = self.cli_env()
+            env["ORGS_AI_HARNESS_CODEX_LOCAL_COMMAND"] = f"{shlex.quote(sys.executable)} {shlex.quote(str(fake_codex))}"
+            env["FAKE_CODEX_STATE"] = str(state_path)
+            env["FAKE_CODEX_MODE"] = "sequence"
+
+            run_result = subprocess.run(
+                [
+                    sys.executable,
+                    "-m",
+                    "orgs_ai_harness",
+                    "run",
+                    "summarize this repo state",
+                    "--adapter",
+                    "codex-local",
+                    "--session-id",
+                    "cli-codex-success",
+                ],
+                cwd=workspace,
+                env=env,
+                text=True,
+                capture_output=True,
+                check=False,
+            )
+            events = (
+                RuntimeSessionStore(workspace / ".agent-harness" / "sessions").read_session("cli-codex-success").events
+            )
+            event_types = [event.event_type for event in events]
+
+            self.assertEqual(run_result.returncode, 0, run_result.stderr)
+            self.assertIn("codex final", run_result.stdout)
+            self.assertIn("adapter_decision", event_types)
+            self.assertIn("adapter_observation", event_types)
+            self.assertEqual(event_types[-1], "final_response")
+
+            for mode, expected in {
+                "malformed": "valid JSON",
+                "nonzero": "exited with code 7",
+                "timeout": "timed out",
+            }.items():
+                with self.subTest(mode=mode):
+                    failure_env = env.copy()
+                    failure_env["FAKE_CODEX_MODE"] = mode
+                    if mode == "timeout":
+                        failure_env["ORGS_AI_HARNESS_CODEX_LOCAL_TIMEOUT"] = "0.1"
+                    result = subprocess.run(
+                        [
+                            sys.executable,
+                            "-m",
+                            "orgs_ai_harness",
+                            "run",
+                            "summarize this repo state",
+                            "--adapter",
+                            "codex-local",
+                            "--session-id",
+                            f"cli-codex-{mode}",
+                        ],
+                        cwd=workspace,
+                        env=failure_env,
+                        text=True,
+                        capture_output=True,
+                        check=False,
+                    )
+                    failure_events = (
+                        RuntimeSessionStore(workspace / ".agent-harness" / "sessions")
+                        .read_session(f"cli-codex-{mode}")
+                        .events
+                    )
+
+                    self.assertEqual(result.returncode, 1, result.stderr)
+                    self.assertIn(expected, result.stdout)
+                    self.assertEqual(failure_events[-2].event_type, "error")
+                    self.assertEqual(failure_events[-1].event_type, "final_response")
 
     def test_cli_run_creates_session_log_and_resume_reports_recovery_state(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:

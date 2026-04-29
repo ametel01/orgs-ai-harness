@@ -289,7 +289,7 @@ def _handle_run_command(args: argparse.Namespace) -> int:
     print(result.summary)
     print(f"Session: {result.session_id}")
     print(f"Log: {result.session_path}")
-    return 0
+    return 0 if result.ok else 1
 
 
 def _runtime_adapter_for_name(adapter_name: str) -> RuntimeAdapter | None:
