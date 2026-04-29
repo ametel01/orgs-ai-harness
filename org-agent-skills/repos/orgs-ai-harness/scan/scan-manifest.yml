@@ -1,0 +1,18 @@
+{
+  "repo_id": "orgs-ai-harness",
+  "repo_path": "..",
+  "repo_source_commit": "b35da036e19cd488edfde6c1cc6f8041d42235a2",
+  "scanned_paths": [
+    {
+      "path": "README.md",
+      "category": "readme",
+      "bytes": 18
+    },
+    {
+      "path": "pyproject.toml",
+      "category": "package_manifest",
+      "bytes": 310
+    }
+  ],
+  "skipped_paths": []
+}

@@ -1,0 +1,220 @@
+{
+  "schema_version": 1,
+  "repo_id": "orgs-ai-harness",
+  "status": "approved-unverified",
+  "decision": "approved",
+  "pack_ref": "repos/orgs-ai-harness/approval.yml",
+  "actor": "user",
+  "timestamp": "2026-04-29T01:34:26Z",
+  "rationale": "Reviewed through interactive setup",
+  "approved_artifacts": [
+    "repos/orgs-ai-harness/evals/onboarding.yml",
+    "repos/orgs-ai-harness/llm-output/claude/skills/approval-eval-cache-lifecycle/SKILL.md",
+    "repos/orgs-ai-harness/llm-output/claude/skills/github-repo-discovery/SKILL.md",
+    "repos/orgs-ai-harness/llm-output/claude/skills/harness-cli-workflows/SKILL.md",
+    "repos/orgs-ai-harness/llm-output/claude/skills/harness-config-registry/SKILL.md",
+    "repos/orgs-ai-harness/llm-output/claude/skills/harness-validation-tests/SKILL.md",
+    "repos/orgs-ai-harness/llm-output/claude/skills/proposal-refresh-workflow/SKILL.md",
+    "repos/orgs-ai-harness/llm-output/claude/skills/repo-onboarding-generation/SKILL.md",
+    "repos/orgs-ai-harness/llm-output/codex/skills/approval-eval-cache-lifecycle/SKILL.md",
+    "repos/orgs-ai-harness/llm-output/codex/skills/github-repo-discovery/SKILL.md",
+    "repos/orgs-ai-harness/llm-output/codex/skills/harness-cli-workflows/SKILL.md",
+    "repos/orgs-ai-harness/llm-output/codex/skills/harness-config-registry/SKILL.md",
+    "repos/orgs-ai-harness/llm-output/codex/skills/harness-validation-tests/SKILL.md",
+    "repos/orgs-ai-harness/llm-output/codex/skills/proposal-refresh-workflow/SKILL.md",
+    "repos/orgs-ai-harness/llm-output/codex/skills/repo-onboarding-generation/SKILL.md",
+    "repos/orgs-ai-harness/llm-skill-generation-prompt.md",
+    "repos/orgs-ai-harness/llm-skill-generation.log",
+    "repos/orgs-ai-harness/onboarding-summary.md",
+    "repos/orgs-ai-harness/pack-report.md",
+    "repos/orgs-ai-harness/resolvers.yml",
+    "repos/orgs-ai-harness/scan/hypothesis-map.yml",
+    "repos/orgs-ai-harness/scan/scan-manifest.yml",
+    "repos/orgs-ai-harness/scripts/check-pack-shape.py",
+    "repos/orgs-ai-harness/scripts/manifest.yml",
+    "repos/orgs-ai-harness/skills/approval-eval-cache-lifecycle/SKILL.md",
+    "repos/orgs-ai-harness/skills/github-repo-discovery/SKILL.md",
+    "repos/orgs-ai-harness/skills/harness-cli-workflows/SKILL.md",
+    "repos/orgs-ai-harness/skills/harness-config-registry/SKILL.md",
+    "repos/orgs-ai-harness/skills/harness-validation-tests/SKILL.md",
+    "repos/orgs-ai-harness/skills/proposal-refresh-workflow/SKILL.md",
+    "repos/orgs-ai-harness/skills/repo-onboarding-generation/SKILL.md",
+    "repos/orgs-ai-harness/skills/repo-onboarding-generation/references/repo-evidence.md",
+    "repos/orgs-ai-harness/unknowns.yml"
+  ],
+  "excluded_artifacts": [],
+  "protected_artifacts": [
+    {
+      "path": "repos/orgs-ai-harness/evals/onboarding.yml",
+      "sha256": "d3fb6a688d3702c41b156d549c17b5dd2b0d1dcaa68d22228df4cb9f85cc0a61",
+      "protected": true
+    },
+    {
+      "path": "repos/orgs-ai-harness/llm-output/claude/skills/approval-eval-cache-lifecycle/SKILL.md",
+      "sha256": "d2b82edd722d28487002db9dbe237d51e88b6f0cb504397c6ccad7aed6903013",
+      "protected": true
+    },
+    {
+      "path": "repos/orgs-ai-harness/llm-output/claude/skills/github-repo-discovery/SKILL.md",
+      "sha256": "4258dc20a9b95ac146d1747686e394f220976f107d7ca9c0ea1b09d69331fa39",
+      "protected": true
+    },
+    {
+      "path": "repos/orgs-ai-harness/llm-output/claude/skills/harness-cli-workflows/SKILL.md",
+      "sha256": "f55c96d7b5075769a97a4fe1188e3626c00d58f868e386383fd4c5728adaf010",
+      "protected": true
+    },
+    {
+      "path": "repos/orgs-ai-harness/llm-output/claude/skills/harness-config-registry/SKILL.md",
+      "sha256": "3e9359c4aabb8509134ecdbfc59df4e8c5af6cae35a9dc946f010569b475f4e5",
+      "protected": true
+    },
+    {
+      "path": "repos/orgs-ai-harness/llm-output/claude/skills/harness-validation-tests/SKILL.md",
+      "sha256": "7f61260dacab73285bd99572abbd48d4791fff6ba01c69bb453a143914bce9e8",
+      "protected": true
+    },
+    {
+      "path": "repos/orgs-ai-harness/llm-output/claude/skills/proposal-refresh-workflow/SKILL.md",
+      "sha256": "27458bdfa34022f7482137c90274448adad2080f79b91d2618a5c36e791d3773",
+      "protected": true
+    },
+    {
+      "path": "repos/orgs-ai-harness/llm-output/claude/skills/repo-onboarding-generation/SKILL.md",
+      "sha256": "7fe6ed27560c6aeb1fd07aba4f771aa60545fd2291eb9984193976232c9c95cc",
+      "protected": true
+    },
+    {
+      "path": "repos/orgs-ai-harness/llm-output/codex/skills/approval-eval-cache-lifecycle/SKILL.md",
+      "sha256": "d2b82edd722d28487002db9dbe237d51e88b6f0cb504397c6ccad7aed6903013",
+      "protected": true
+    },
+    {
+      "path": "repos/orgs-ai-harness/llm-output/codex/skills/github-repo-discovery/SKILL.md",
+      "sha256": "4258dc20a9b95ac146d1747686e394f220976f107d7ca9c0ea1b09d69331fa39",
+      "protected": true
+    },
+    {
+      "path": "repos/orgs-ai-harness/llm-output/codex/skills/harness-cli-workflows/SKILL.md",
+      "sha256": "f55c96d7b5075769a97a4fe1188e3626c00d58f868e386383fd4c5728adaf010",
+      "protected": true
+    },
+    {
+      "path": "repos/orgs-ai-harness/llm-output/codex/skills/harness-config-registry/SKILL.md",
+      "sha256": "3e9359c4aabb8509134ecdbfc59df4e8c5af6cae35a9dc946f010569b475f4e5",
+      "protected": true
+    },
+    {
+      "path": "repos/orgs-ai-harness/llm-output/codex/skills/harness-validation-tests/SKILL.md",
+      "sha256": "7f61260dacab73285bd99572abbd48d4791fff6ba01c69bb453a143914bce9e8",
+      "protected": true
+    },
+    {
+      "path": "repos/orgs-ai-harness/llm-output/codex/skills/proposal-refresh-workflow/SKILL.md",
+      "sha256": "27458bdfa34022f7482137c90274448adad2080f79b91d2618a5c36e791d3773",
+      "protected": true
+    },
+    {
+      "path": "repos/orgs-ai-harness/llm-output/codex/skills/repo-onboarding-generation/SKILL.md",
+      "sha256": "7fe6ed27560c6aeb1fd07aba4f771aa60545fd2291eb9984193976232c9c95cc",
+      "protected": true
+    },
+    {
+      "path": "repos/orgs-ai-harness/llm-skill-generation-prompt.md",
+      "sha256": "8d8cd28f3b753dba923ed36ba3074c50a36642db5b576f27e855f21484304fd7",
+      "protected": true
+    },
+    {
+      "path": "repos/orgs-ai-harness/llm-skill-generation.log",
+      "sha256": "515deee46c169209029153869bf200ee163ff53161870fcd0b48fe90eb7a628d",
+      "protected": true
+    },
+    {
+      "path": "repos/orgs-ai-harness/onboarding-summary.md",
+      "sha256": "29a6740a3b0470ae924e96caee38562a6e167d444fb3976dec246f4497652ac6",
+      "protected": true
+    },
+    {
+      "path": "repos/orgs-ai-harness/pack-report.md",
+      "sha256": "fa0a256d31e4eb079b3b24a520336ed5e8e95d4e1253ec03bb3708e972ba269e",
+      "protected": true
+    },
+    {
+      "path": "repos/orgs-ai-harness/resolvers.yml",
+      "sha256": "203f65a3577e0dd15f84e06ae612cea72d8ea1f99fc3ac63b603f55a09d68367",
+      "protected": true
+    },
+    {
+      "path": "repos/orgs-ai-harness/scan/hypothesis-map.yml",
+      "sha256": "4d8e962fffa4463a1e63d7b793468a2374e7e4a163300f3fe16d638691289794",
+      "protected": true
+    },
+    {
+      "path": "repos/orgs-ai-harness/scan/scan-manifest.yml",
+      "sha256": "6af548c1564306ccd62c6975ffd5b167a316a88780a62e4964f80f22275526ce",
+      "protected": true
+    },
+    {
+      "path": "repos/orgs-ai-harness/scripts/check-pack-shape.py",
+      "sha256": "a1b898093f9d3ac813a44abac51ad9d59d157820f68d3257357b5c56b9942223",
+      "protected": true
+    },
+    {
+      "path": "repos/orgs-ai-harness/scripts/manifest.yml",
+      "sha256": "07939f4acad33b1cd24b04d0a69e6183862fbbc9ad81bef954e9f35b636c9a4d",
+      "protected": true
+    },
+    {
+      "path": "repos/orgs-ai-harness/skills/approval-eval-cache-lifecycle/SKILL.md",
+      "sha256": "d2b82edd722d28487002db9dbe237d51e88b6f0cb504397c6ccad7aed6903013",
+      "protected": true
+    },
+    {
+      "path": "repos/orgs-ai-harness/skills/github-repo-discovery/SKILL.md",
+      "sha256": "4258dc20a9b95ac146d1747686e394f220976f107d7ca9c0ea1b09d69331fa39",
+      "protected": true
+    },
+    {
+      "path": "repos/orgs-ai-harness/skills/harness-cli-workflows/SKILL.md",
+      "sha256": "f55c96d7b5075769a97a4fe1188e3626c00d58f868e386383fd4c5728adaf010",
+      "protected": true
+    },
+    {
+      "path": "repos/orgs-ai-harness/skills/harness-config-registry/SKILL.md",
+      "sha256": "3e9359c4aabb8509134ecdbfc59df4e8c5af6cae35a9dc946f010569b475f4e5",
+      "protected": true
+    },
+    {
+      "path": "repos/orgs-ai-harness/skills/harness-validation-tests/SKILL.md",
+      "sha256": "7f61260dacab73285bd99572abbd48d4791fff6ba01c69bb453a143914bce9e8",
+      "protected": true
+    },
+    {
+      "path": "repos/orgs-ai-harness/skills/proposal-refresh-workflow/SKILL.md",
+      "sha256": "27458bdfa34022f7482137c90274448adad2080f79b91d2618a5c36e791d3773",
+      "protected": true
+    },
+    {
+      "path": "repos/orgs-ai-harness/skills/repo-onboarding-generation/SKILL.md",
+      "sha256": "7fe6ed27560c6aeb1fd07aba4f771aa60545fd2291eb9984193976232c9c95cc",
+      "protected": true
+    },
+    {
+      "path": "repos/orgs-ai-harness/skills/repo-onboarding-generation/references/repo-evidence.md",
+      "sha256": "18bea694ec799bccbde7b609e844a692349bc0bbd77d1ea2328d3b037a1a8139",
+      "protected": true
+    },
+    {
+      "path": "repos/orgs-ai-harness/unknowns.yml",
+      "sha256": "ea599ca003f8cd5f508681721638e4a2adb25a0fd1c2127ad894c62ac43a2058",
+      "protected": true
+    }
+  ],
+  "verified": false,
+  "warnings": [
+    {
+      "code": "approved-unverified",
+      "message": "Pack is human-approved but eval replay has not verified it."
+    }
+  ]
+}

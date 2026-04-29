@@ -1,0 +1,50 @@
+{
+  "unknowns": [
+    {
+      "id": "unk_001",
+      "question": "Which command is the narrowest reliable unit test command?",
+      "why_it_matters": "Eval and skill generation need reproducible validation commands.",
+      "severity": "blocking",
+      "status": "open",
+      "evidence": [
+        {
+          "path": ".github/workflows/ci.yml",
+          "note": "Repository evidence found, but test command is unknown."
+        }
+      ],
+      "recommended_investigation": "Inspect package scripts and CI job command usage."
+    }
+  ],
+  "candidate_org_skills": [
+    {
+      "name": "atb-catalog-package-lifecycle",
+      "status": "candidate",
+      "reason": "Inferred only from agents-toolbelt; requires cross-repo review before org-wide acceptance."
+    },
+    {
+      "name": "atb-cli-runtime-tui",
+      "status": "candidate",
+      "reason": "Inferred only from agents-toolbelt; requires cross-repo review before org-wide acceptance."
+    },
+    {
+      "name": "atb-cli-tools-skill-generation",
+      "status": "candidate",
+      "reason": "Inferred only from agents-toolbelt; requires cross-repo review before org-wide acceptance."
+    },
+    {
+      "name": "atb-go-quality-gates",
+      "status": "candidate",
+      "reason": "Inferred only from agents-toolbelt; requires cross-repo review before org-wide acceptance."
+    },
+    {
+      "name": "atb-release-installer-security",
+      "status": "candidate",
+      "reason": "Inferred only from agents-toolbelt; requires cross-repo review before org-wide acceptance."
+    },
+    {
+      "name": "atb-state-plan-ownership",
+      "status": "candidate",
+      "reason": "Inferred only from agents-toolbelt; requires cross-repo review before org-wide acceptance."
+    }
+  ]
+}

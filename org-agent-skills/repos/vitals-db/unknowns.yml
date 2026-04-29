@@ -1,0 +1,55 @@
+{
+  "unknowns": [
+    {
+      "id": "unk_001",
+      "question": "Which command is the narrowest reliable unit test command?",
+      "why_it_matters": "Eval and skill generation need reproducible validation commands.",
+      "severity": "blocking",
+      "status": "open",
+      "evidence": [
+        {
+          "path": "package.json",
+          "note": "Package manifest found; test script needs confirmation."
+        }
+      ],
+      "recommended_investigation": "Inspect package scripts and CI job command usage."
+    }
+  ],
+  "candidate_org_skills": [
+    {
+      "name": "analytics-query-dto-contracts",
+      "status": "candidate",
+      "reason": "Inferred only from vitals-db; requires cross-repo review before org-wide acceptance."
+    },
+    {
+      "name": "apple-health-ingest-pipeline",
+      "status": "candidate",
+      "reason": "Inferred only from vitals-db; requires cross-repo review before org-wide acceptance."
+    },
+    {
+      "name": "composite-performance-analytics",
+      "status": "candidate",
+      "reason": "Inferred only from vitals-db; requires cross-repo review before org-wide acceptance."
+    },
+    {
+      "name": "duckdb-schema-migrations",
+      "status": "candidate",
+      "reason": "Inferred only from vitals-db; requires cross-repo review before org-wide acceptance."
+    },
+    {
+      "name": "hono-api-routes",
+      "status": "candidate",
+      "reason": "Inferred only from vitals-db; requires cross-repo review before org-wide acceptance."
+    },
+    {
+      "name": "next-dashboard-pages",
+      "status": "candidate",
+      "reason": "Inferred only from vitals-db; requires cross-repo review before org-wide acceptance."
+    },
+    {
+      "name": "vitals-bun-workspace-gates",
+      "status": "candidate",
+      "reason": "Inferred only from vitals-db; requires cross-repo review before org-wide acceptance."
+    }
+  ]
+}

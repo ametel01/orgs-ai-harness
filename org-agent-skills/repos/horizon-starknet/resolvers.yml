@@ -1,0 +1,74 @@
+{
+  "resolvers": [
+    {
+      "intent": "use horizon-cairo-contracts",
+      "skill": "horizon-cairo-contracts",
+      "when": [
+        "use",
+        "this",
+        "skill",
+        "when",
+        "editing",
+        "horizon",
+        "protocol",
+        "cairo"
+      ]
+    },
+    {
+      "intent": "use horizon-deploy-upgrade",
+      "skill": "horizon-deploy-upgrade",
+      "when": [
+        "use",
+        "this",
+        "skill",
+        "when",
+        "working",
+        "with",
+        "horizon",
+        "starknet"
+      ]
+    },
+    {
+      "intent": "use horizon-frontend-starknet",
+      "skill": "horizon-frontend-starknet",
+      "when": [
+        "use",
+        "this",
+        "skill",
+        "when",
+        "changing",
+        "the",
+        "horizon",
+        "next"
+      ]
+    },
+    {
+      "intent": "use horizon-indexer-events",
+      "skill": "horizon-indexer-events",
+      "when": [
+        "use",
+        "this",
+        "skill",
+        "when",
+        "modifying",
+        "the",
+        "horizon",
+        "apibara"
+      ]
+    },
+    {
+      "intent": "use horizon-quality-gates",
+      "skill": "horizon-quality-gates",
+      "when": [
+        "use",
+        "this",
+        "skill",
+        "when",
+        "choosing",
+        "validation",
+        "commands",
+        "or"
+      ]
+    }
+  ]
+}

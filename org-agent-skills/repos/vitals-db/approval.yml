@@ -1,0 +1,214 @@
+{
+  "schema_version": 1,
+  "repo_id": "vitals-db",
+  "status": "approved-unverified",
+  "decision": "approved",
+  "pack_ref": "repos/vitals-db/approval.yml",
+  "actor": "user",
+  "timestamp": "2026-04-29T01:34:30Z",
+  "rationale": "Reviewed through interactive setup",
+  "approved_artifacts": [
+    "repos/vitals-db/evals/onboarding.yml",
+    "repos/vitals-db/llm-output/claude/skills/analytics-query-dto-contracts/SKILL.md",
+    "repos/vitals-db/llm-output/claude/skills/apple-health-ingest-pipeline/SKILL.md",
+    "repos/vitals-db/llm-output/claude/skills/composite-performance-analytics/SKILL.md",
+    "repos/vitals-db/llm-output/claude/skills/duckdb-schema-migrations/SKILL.md",
+    "repos/vitals-db/llm-output/claude/skills/hono-api-routes/SKILL.md",
+    "repos/vitals-db/llm-output/claude/skills/next-dashboard-pages/SKILL.md",
+    "repos/vitals-db/llm-output/claude/skills/vitals-bun-workspace-gates/SKILL.md",
+    "repos/vitals-db/llm-output/codex/skills/analytics-query-dto-contracts/SKILL.md",
+    "repos/vitals-db/llm-output/codex/skills/apple-health-ingest-pipeline/SKILL.md",
+    "repos/vitals-db/llm-output/codex/skills/composite-performance-analytics/SKILL.md",
+    "repos/vitals-db/llm-output/codex/skills/duckdb-schema-migrations/SKILL.md",
+    "repos/vitals-db/llm-output/codex/skills/hono-api-routes/SKILL.md",
+    "repos/vitals-db/llm-output/codex/skills/next-dashboard-pages/SKILL.md",
+    "repos/vitals-db/llm-output/codex/skills/vitals-bun-workspace-gates/SKILL.md",
+    "repos/vitals-db/llm-skill-generation-prompt.md",
+    "repos/vitals-db/llm-skill-generation.log",
+    "repos/vitals-db/onboarding-summary.md",
+    "repos/vitals-db/pack-report.md",
+    "repos/vitals-db/resolvers.yml",
+    "repos/vitals-db/scan/hypothesis-map.yml",
+    "repos/vitals-db/scan/scan-manifest.yml",
+    "repos/vitals-db/scripts/check-pack-shape.py",
+    "repos/vitals-db/scripts/manifest.yml",
+    "repos/vitals-db/skills/analytics-query-dto-contracts/SKILL.md",
+    "repos/vitals-db/skills/apple-health-ingest-pipeline/SKILL.md",
+    "repos/vitals-db/skills/composite-performance-analytics/SKILL.md",
+    "repos/vitals-db/skills/duckdb-schema-migrations/SKILL.md",
+    "repos/vitals-db/skills/hono-api-routes/SKILL.md",
+    "repos/vitals-db/skills/next-dashboard-pages/SKILL.md",
+    "repos/vitals-db/skills/vitals-bun-workspace-gates/SKILL.md",
+    "repos/vitals-db/unknowns.yml"
+  ],
+  "excluded_artifacts": [],
+  "protected_artifacts": [
+    {
+      "path": "repos/vitals-db/evals/onboarding.yml",
+      "sha256": "11f266e22ef6c567e8f884ce471f37a941326d8c7a1a86dcdd001cfbb5ee6c56",
+      "protected": true
+    },
+    {
+      "path": "repos/vitals-db/llm-output/claude/skills/analytics-query-dto-contracts/SKILL.md",
+      "sha256": "1c60dfd9b380daf2fcd7992ded883af562dc15cceb15bfc49a57426dd84f9774",
+      "protected": true
+    },
+    {
+      "path": "repos/vitals-db/llm-output/claude/skills/apple-health-ingest-pipeline/SKILL.md",
+      "sha256": "89e827e2a4ffc77e1d81f87df1316ed1cf4a27fa69d06a368ccc7fbad890d914",
+      "protected": true
+    },
+    {
+      "path": "repos/vitals-db/llm-output/claude/skills/composite-performance-analytics/SKILL.md",
+      "sha256": "369febaaca77432ae88c544c56b6fe627e20760424f292e1c0628395c70f6858",
+      "protected": true
+    },
+    {
+      "path": "repos/vitals-db/llm-output/claude/skills/duckdb-schema-migrations/SKILL.md",
+      "sha256": "6dfa9802f6b051661d9fbcad0650fb40e739e63a5c9003a669bd306a134e4885",
+      "protected": true
+    },
+    {
+      "path": "repos/vitals-db/llm-output/claude/skills/hono-api-routes/SKILL.md",
+      "sha256": "703bf84a12267ef21062191f0ce11a976bfaf85e43fb16e469ebb4c2620ee5d0",
+      "protected": true
+    },
+    {
+      "path": "repos/vitals-db/llm-output/claude/skills/next-dashboard-pages/SKILL.md",
+      "sha256": "c7c5315bb047e732ba300f9847c774cefd19f912b30bacbc25383fbdfc9313ef",
+      "protected": true
+    },
+    {
+      "path": "repos/vitals-db/llm-output/claude/skills/vitals-bun-workspace-gates/SKILL.md",
+      "sha256": "2d3f4bad242014e2b731b01e47434196b49579535a2d91fe0985fe4db92ae902",
+      "protected": true
+    },
+    {
+      "path": "repos/vitals-db/llm-output/codex/skills/analytics-query-dto-contracts/SKILL.md",
+      "sha256": "1c60dfd9b380daf2fcd7992ded883af562dc15cceb15bfc49a57426dd84f9774",
+      "protected": true
+    },
+    {
+      "path": "repos/vitals-db/llm-output/codex/skills/apple-health-ingest-pipeline/SKILL.md",
+      "sha256": "89e827e2a4ffc77e1d81f87df1316ed1cf4a27fa69d06a368ccc7fbad890d914",
+      "protected": true
+    },
+    {
+      "path": "repos/vitals-db/llm-output/codex/skills/composite-performance-analytics/SKILL.md",
+      "sha256": "369febaaca77432ae88c544c56b6fe627e20760424f292e1c0628395c70f6858",
+      "protected": true
+    },
+    {
+      "path": "repos/vitals-db/llm-output/codex/skills/duckdb-schema-migrations/SKILL.md",
+      "sha256": "6dfa9802f6b051661d9fbcad0650fb40e739e63a5c9003a669bd306a134e4885",
+      "protected": true
+    },
+    {
+      "path": "repos/vitals-db/llm-output/codex/skills/hono-api-routes/SKILL.md",
+      "sha256": "703bf84a12267ef21062191f0ce11a976bfaf85e43fb16e469ebb4c2620ee5d0",
+      "protected": true
+    },
+    {
+      "path": "repos/vitals-db/llm-output/codex/skills/next-dashboard-pages/SKILL.md",
+      "sha256": "c7c5315bb047e732ba300f9847c774cefd19f912b30bacbc25383fbdfc9313ef",
+      "protected": true
+    },
+    {
+      "path": "repos/vitals-db/llm-output/codex/skills/vitals-bun-workspace-gates/SKILL.md",
+      "sha256": "2d3f4bad242014e2b731b01e47434196b49579535a2d91fe0985fe4db92ae902",
+      "protected": true
+    },
+    {
+      "path": "repos/vitals-db/llm-skill-generation-prompt.md",
+      "sha256": "f9f5b17a005f2fa6797f55fddaf21031908c440bb0a3381d2bcde2b831f55017",
+      "protected": true
+    },
+    {
+      "path": "repos/vitals-db/llm-skill-generation.log",
+      "sha256": "e05941ce3320bd949f078ef2838cbfb8ca75c96d9c2072af2594685c050f1949",
+      "protected": true
+    },
+    {
+      "path": "repos/vitals-db/onboarding-summary.md",
+      "sha256": "4755f196e69c99dd4b777f7e02c6e826a3e85cde445fd1ce69ce1be5aa828f40",
+      "protected": true
+    },
+    {
+      "path": "repos/vitals-db/pack-report.md",
+      "sha256": "2827d6a65cf1d1d9e38dc63f66f9296ac64d9dc30fe646d7431c56f47f644b84",
+      "protected": true
+    },
+    {
+      "path": "repos/vitals-db/resolvers.yml",
+      "sha256": "725008a688a0913558065c57a7a5072d338bd70d155e0fff6ea3f1c922102cdc",
+      "protected": true
+    },
+    {
+      "path": "repos/vitals-db/scan/hypothesis-map.yml",
+      "sha256": "0690f561a06f67ee0a04aefd6b213d776d6485a845729d72c0d4bf96899ba125",
+      "protected": true
+    },
+    {
+      "path": "repos/vitals-db/scan/scan-manifest.yml",
+      "sha256": "1c054c377036f13a5b10d06f333ecf3a527ed1c3bb2a6131a89359a04021c628",
+      "protected": true
+    },
+    {
+      "path": "repos/vitals-db/scripts/check-pack-shape.py",
+      "sha256": "a1b898093f9d3ac813a44abac51ad9d59d157820f68d3257357b5c56b9942223",
+      "protected": true
+    },
+    {
+      "path": "repos/vitals-db/scripts/manifest.yml",
+      "sha256": "60d5abe905eb5aaa48909c59dd21b97e7d59de2d5f8be01701e2b770654fa9b8",
+      "protected": true
+    },
+    {
+      "path": "repos/vitals-db/skills/analytics-query-dto-contracts/SKILL.md",
+      "sha256": "1c60dfd9b380daf2fcd7992ded883af562dc15cceb15bfc49a57426dd84f9774",
+      "protected": true
+    },
+    {
+      "path": "repos/vitals-db/skills/apple-health-ingest-pipeline/SKILL.md",
+      "sha256": "89e827e2a4ffc77e1d81f87df1316ed1cf4a27fa69d06a368ccc7fbad890d914",
+      "protected": true
+    },
+    {
+      "path": "repos/vitals-db/skills/composite-performance-analytics/SKILL.md",
+      "sha256": "369febaaca77432ae88c544c56b6fe627e20760424f292e1c0628395c70f6858",
+      "protected": true
+    },
+    {
+      "path": "repos/vitals-db/skills/duckdb-schema-migrations/SKILL.md",
+      "sha256": "6dfa9802f6b051661d9fbcad0650fb40e739e63a5c9003a669bd306a134e4885",
+      "protected": true
+    },
+    {
+      "path": "repos/vitals-db/skills/hono-api-routes/SKILL.md",
+      "sha256": "703bf84a12267ef21062191f0ce11a976bfaf85e43fb16e469ebb4c2620ee5d0",
+      "protected": true
+    },
+    {
+      "path": "repos/vitals-db/skills/next-dashboard-pages/SKILL.md",
+      "sha256": "c7c5315bb047e732ba300f9847c774cefd19f912b30bacbc25383fbdfc9313ef",
+      "protected": true
+    },
+    {
+      "path": "repos/vitals-db/skills/vitals-bun-workspace-gates/SKILL.md",
+      "sha256": "2d3f4bad242014e2b731b01e47434196b49579535a2d91fe0985fe4db92ae902",
+      "protected": true
+    },
+    {
+      "path": "repos/vitals-db/unknowns.yml",
+      "sha256": "ce481f2b7e39e4e1aeeba24ad80654d94488feb04185a3b9a832352093e9ff25",
+      "protected": true
+    }
+  ],
+  "verified": false,
+  "warnings": [
+    {
+      "code": "approved-unverified",
+      "message": "Pack is human-approved but eval replay has not verified it."
+    }
+  ]
+}

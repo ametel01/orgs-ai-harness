@@ -1,0 +1,28 @@
+{
+  "repo_id": "agents-toolbelt",
+  "repo_path": "../../agents-toolbelt",
+  "repo_source_commit": "e927a1a662a6c9de0df49b9e2e9f3d9b241981cc",
+  "scanned_paths": [
+    {
+      "path": ".github/workflows/ci.yml",
+      "category": "ci_config",
+      "bytes": 498
+    },
+    {
+      "path": ".github/workflows/release.yml",
+      "category": "ci_config",
+      "bytes": 870
+    },
+    {
+      "path": "README.md",
+      "category": "readme",
+      "bytes": 9114
+    },
+    {
+      "path": "scripts/install.sh",
+      "category": "script",
+      "bytes": 5457
+    }
+  ],
+  "skipped_paths": []
+}

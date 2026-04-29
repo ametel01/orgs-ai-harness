@@ -1,0 +1,137 @@
+{
+  "repo_id": "vitals-db",
+  "tasks": [
+    {
+      "id": "repo-knowledge-readme",
+      "category": "repo knowledge",
+      "prompt": "Summarize the repo purpose from scan evidence.",
+      "expected_files": [
+        "onboarding-summary.md"
+      ],
+      "expected_commands": [],
+      "expected_contains": [
+        "Onboarding Summary"
+      ],
+      "forbidden_contains": [
+        "secret"
+      ]
+    },
+    {
+      "id": "repo-knowledge-manifest",
+      "category": "repo knowledge",
+      "prompt": "Find the package manifest evidence.",
+      "expected_files": [
+        "scan/scan-manifest.yml"
+      ],
+      "expected_commands": [],
+      "expected_contains": [
+        "package.json"
+      ],
+      "forbidden_contains": []
+    },
+    {
+      "id": "command-selection-tests",
+      "category": "command selection",
+      "prompt": "Choose the narrowest likely test command.",
+      "expected_files": [
+        "scan/hypothesis-map.yml"
+      ],
+      "expected_commands": [
+        "npm test"
+      ],
+      "expected_contains": [
+        "test_command_candidates"
+      ],
+      "forbidden_contains": []
+    },
+    {
+      "id": "safe-procedure-sensitive-files",
+      "category": "safe procedure",
+      "prompt": "Confirm sensitive files are not read into generated skills.",
+      "expected_files": [
+        "scan/scan-manifest.yml"
+      ],
+      "expected_commands": [],
+      "expected_contains": [
+        "sensitive filename policy"
+      ],
+      "forbidden_contains": [
+        "do-not-leak"
+      ]
+    },
+    {
+      "id": "resolver-generated-skills",
+      "category": "resolver behavior",
+      "prompt": "Route skill-trigger questions to generated repo skills.",
+      "expected_files": [
+        "resolvers.yml"
+      ],
+      "expected_commands": [],
+      "expected_contains": [
+        "analytics-query-dto-contracts",
+        "apple-health-ingest-pipeline",
+        "composite-performance-analytics"
+      ],
+      "forbidden_contains": []
+    },
+    {
+      "id": "skill-metadata-routing",
+      "category": "repo knowledge",
+      "prompt": "Use concrete skill metadata to choose the smallest relevant skill.",
+      "expected_files": [
+        "skills/analytics-query-dto-contracts/SKILL.md"
+      ],
+      "expected_commands": [],
+      "expected_contains": [
+        "description:"
+      ],
+      "forbidden_contains": []
+    },
+    {
+      "id": "unknowns-preserved",
+      "category": "safe procedure",
+      "prompt": "Keep unresolved findings visible for human review.",
+      "expected_files": [
+        "unknowns.yml"
+      ],
+      "expected_commands": [],
+      "expected_contains": [
+        "Which command is the narrowest reliable unit test command?"
+      ],
+      "forbidden_contains": []
+    },
+    {
+      "id": "multiple-small-skills",
+      "category": "resolver behavior",
+      "prompt": "Prefer specialized generated skills over one broad catch-all.",
+      "expected_files": [
+        "skills/analytics-query-dto-contracts/SKILL.md",
+        "skills/apple-health-ingest-pipeline/SKILL.md",
+        "skills/composite-performance-analytics/SKILL.md"
+      ],
+      "expected_commands": [],
+      "expected_contains": [
+        "analytics-query-dto-contracts",
+        "apple-health-ingest-pipeline"
+      ],
+      "forbidden_contains": []
+    },
+    {
+      "id": "draft-status-report",
+      "category": "safe procedure",
+      "prompt": "Verify generated artifacts remain draft and reviewable.",
+      "expected_files": [
+        "pack-report.md"
+      ],
+      "expected_commands": [],
+      "expected_contains": [
+        "Status: draft",
+        "vitals-db"
+      ],
+      "forbidden_contains": [
+        "Status: verified",
+        "Status: approved"
+      ]
+    }
+  ]
+}

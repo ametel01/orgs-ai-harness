@@ -1,0 +1,196 @@
+{
+  "schema_version": 1,
+  "repo_id": "agents-toolbelt",
+  "status": "approved-unverified",
+  "decision": "approved",
+  "pack_ref": "repos/agents-toolbelt/approval.yml",
+  "actor": "user",
+  "timestamp": "2026-04-29T01:34:39Z",
+  "rationale": "Reviewed through interactive setup",
+  "approved_artifacts": [
+    "repos/agents-toolbelt/evals/onboarding.yml",
+    "repos/agents-toolbelt/llm-output/claude/skills/atb-catalog-package-lifecycle/SKILL.md",
+    "repos/agents-toolbelt/llm-output/claude/skills/atb-cli-runtime-tui/SKILL.md",
+    "repos/agents-toolbelt/llm-output/claude/skills/atb-cli-tools-skill-generation/SKILL.md",
+    "repos/agents-toolbelt/llm-output/claude/skills/atb-go-quality-gates/SKILL.md",
+    "repos/agents-toolbelt/llm-output/claude/skills/atb-release-installer-security/SKILL.md",
+    "repos/agents-toolbelt/llm-output/claude/skills/atb-state-plan-ownership/SKILL.md",
+    "repos/agents-toolbelt/llm-output/codex/skills/atb-catalog-package-lifecycle/SKILL.md",
+    "repos/agents-toolbelt/llm-output/codex/skills/atb-cli-runtime-tui/SKILL.md",
+    "repos/agents-toolbelt/llm-output/codex/skills/atb-cli-tools-skill-generation/SKILL.md",
+    "repos/agents-toolbelt/llm-output/codex/skills/atb-go-quality-gates/SKILL.md",
+    "repos/agents-toolbelt/llm-output/codex/skills/atb-release-installer-security/SKILL.md",
+    "repos/agents-toolbelt/llm-output/codex/skills/atb-state-plan-ownership/SKILL.md",
+    "repos/agents-toolbelt/llm-skill-generation-prompt.md",
+    "repos/agents-toolbelt/llm-skill-generation.log",
+    "repos/agents-toolbelt/onboarding-summary.md",
+    "repos/agents-toolbelt/pack-report.md",
+    "repos/agents-toolbelt/resolvers.yml",
+    "repos/agents-toolbelt/scan/hypothesis-map.yml",
+    "repos/agents-toolbelt/scan/scan-manifest.yml",
+    "repos/agents-toolbelt/scripts/check-pack-shape.py",
+    "repos/agents-toolbelt/scripts/manifest.yml",
+    "repos/agents-toolbelt/skills/atb-catalog-package-lifecycle/SKILL.md",
+    "repos/agents-toolbelt/skills/atb-cli-runtime-tui/SKILL.md",
+    "repos/agents-toolbelt/skills/atb-cli-tools-skill-generation/SKILL.md",
+    "repos/agents-toolbelt/skills/atb-go-quality-gates/SKILL.md",
+    "repos/agents-toolbelt/skills/atb-release-installer-security/SKILL.md",
+    "repos/agents-toolbelt/skills/atb-state-plan-ownership/SKILL.md",
+    "repos/agents-toolbelt/unknowns.yml"
+  ],
+  "excluded_artifacts": [],
+  "protected_artifacts": [
+    {
+      "path": "repos/agents-toolbelt/evals/onboarding.yml",
+      "sha256": "3855084ab0d70079c66235c020860cedf4ed870f9b0dd93db31e3ecc1ab308bc",
+      "protected": true
+    },
+    {
+      "path": "repos/agents-toolbelt/llm-output/claude/skills/atb-catalog-package-lifecycle/SKILL.md",
+      "sha256": "9f53b0d2ed2c67127f330649198159ac8669894a176e1a98ceb17dd33bbb063c",
+      "protected": true
+    },
+    {
+      "path": "repos/agents-toolbelt/llm-output/claude/skills/atb-cli-runtime-tui/SKILL.md",
+      "sha256": "15dfb1be4ccf4edaf5ceca35ff518eb8dffbf614ed4aa20d10a5bd6b472ea3d7",
+      "protected": true
+    },
+    {
+      "path": "repos/agents-toolbelt/llm-output/claude/skills/atb-cli-tools-skill-generation/SKILL.md",
+      "sha256": "ddab41b9d90f70d649ca5e42e6ae0290e5b1a59ba72dc73a26c552f9622aa7df",
+      "protected": true
+    },
+    {
+      "path": "repos/agents-toolbelt/llm-output/claude/skills/atb-go-quality-gates/SKILL.md",
+      "sha256": "445f0f543f6c8d8ab7571250124a6a0a299ec19c0c9feed61b4a3d288580a942",
+      "protected": true
+    },
+    {
+      "path": "repos/agents-toolbelt/llm-output/claude/skills/atb-release-installer-security/SKILL.md",
+      "sha256": "f029cfba770dc9b6da6bc1e463ba24a2fd71f7b58a0416e28b9c3b2f6cf88879",
+      "protected": true
+    },
+    {
+      "path": "repos/agents-toolbelt/llm-output/claude/skills/atb-state-plan-ownership/SKILL.md",
+      "sha256": "c51f53984f21c5472b144493fa3fc4a2492ac14ca6c1ad8e0968d1d4a0ab8e6c",
+      "protected": true
+    },
+    {
+      "path": "repos/agents-toolbelt/llm-output/codex/skills/atb-catalog-package-lifecycle/SKILL.md",
+      "sha256": "9f53b0d2ed2c67127f330649198159ac8669894a176e1a98ceb17dd33bbb063c",
+      "protected": true
+    },
+    {
+      "path": "repos/agents-toolbelt/llm-output/codex/skills/atb-cli-runtime-tui/SKILL.md",
+      "sha256": "15dfb1be4ccf4edaf5ceca35ff518eb8dffbf614ed4aa20d10a5bd6b472ea3d7",
+      "protected": true
+    },
+    {
+      "path": "repos/agents-toolbelt/llm-output/codex/skills/atb-cli-tools-skill-generation/SKILL.md",
+      "sha256": "ddab41b9d90f70d649ca5e42e6ae0290e5b1a59ba72dc73a26c552f9622aa7df",
+      "protected": true
+    },
+    {
+      "path": "repos/agents-toolbelt/llm-output/codex/skills/atb-go-quality-gates/SKILL.md",
+      "sha256": "445f0f543f6c8d8ab7571250124a6a0a299ec19c0c9feed61b4a3d288580a942",
+      "protected": true
+    },
+    {
+      "path": "repos/agents-toolbelt/llm-output/codex/skills/atb-release-installer-security/SKILL.md",
+      "sha256": "f029cfba770dc9b6da6bc1e463ba24a2fd71f7b58a0416e28b9c3b2f6cf88879",
+      "protected": true
+    },
+    {
+      "path": "repos/agents-toolbelt/llm-output/codex/skills/atb-state-plan-ownership/SKILL.md",
+      "sha256": "c51f53984f21c5472b144493fa3fc4a2492ac14ca6c1ad8e0968d1d4a0ab8e6c",
+      "protected": true
+    },
+    {
+      "path": "repos/agents-toolbelt/llm-skill-generation-prompt.md",
+      "sha256": "54293b20a06deac784ed69e66ec6606a809ef421994dc669b694dc4dec02f55a",
+      "protected": true
+    },
+    {
+      "path": "repos/agents-toolbelt/llm-skill-generation.log",
+      "sha256": "7f4cdafdc287175bfa731dafd1fc06bf2c93caf33209e18555df130b1be9bb43",
+      "protected": true
+    },
+    {
+      "path": "repos/agents-toolbelt/onboarding-summary.md",
+      "sha256": "a8e7c4b92317a6f3ad46b664b3d00020fa57a51da2bab9bacd932fc64b693123",
+      "protected": true
+    },
+    {
+      "path": "repos/agents-toolbelt/pack-report.md",
+      "sha256": "6e208f2c69d5ecc3a04ee21bc1f250c7b9335df7aaf16aac689a04bb0a22a844",
+      "protected": true
+    },
+    {
+      "path": "repos/agents-toolbelt/resolvers.yml",
+      "sha256": "88e3d64bf6df145df4043cf2726e02fd3dc28b8cf6bea75ba4e17af2151e2c13",
+      "protected": true
+    },
+    {
+      "path": "repos/agents-toolbelt/scan/hypothesis-map.yml",
+      "sha256": "b530740f4be4f8ef09746abd674524183acc0a9b442333b384041449a347e9e9",
+      "protected": true
+    },
+    {
+      "path": "repos/agents-toolbelt/scan/scan-manifest.yml",
+      "sha256": "ef4e1d894af9f161d6df8e22e2bdbf62c17fe510072123ceb491a2ea04863932",
+      "protected": true
+    },
+    {
+      "path": "repos/agents-toolbelt/scripts/check-pack-shape.py",
+      "sha256": "a1b898093f9d3ac813a44abac51ad9d59d157820f68d3257357b5c56b9942223",
+      "protected": true
+    },
+    {
+      "path": "repos/agents-toolbelt/scripts/manifest.yml",
+      "sha256": "9d4a00bab5e47084cc281a360bb23e7ee32996f3359ee6a6a7d3218901eff97c",
+      "protected": true
+    },
+    {
+      "path": "repos/agents-toolbelt/skills/atb-catalog-package-lifecycle/SKILL.md",
+      "sha256": "9f53b0d2ed2c67127f330649198159ac8669894a176e1a98ceb17dd33bbb063c",
+      "protected": true
+    },
+    {
+      "path": "repos/agents-toolbelt/skills/atb-cli-runtime-tui/SKILL.md",
+      "sha256": "15dfb1be4ccf4edaf5ceca35ff518eb8dffbf614ed4aa20d10a5bd6b472ea3d7",
+      "protected": true
+    },
+    {
+      "path": "repos/agents-toolbelt/skills/atb-cli-tools-skill-generation/SKILL.md",
+      "sha256": "ddab41b9d90f70d649ca5e42e6ae0290e5b1a59ba72dc73a26c552f9622aa7df",
+      "protected": true
+    },
+    {
+      "path": "repos/agents-toolbelt/skills/atb-go-quality-gates/SKILL.md",
+      "sha256": "445f0f543f6c8d8ab7571250124a6a0a299ec19c0c9feed61b4a3d288580a942",
+      "protected": true
+    },
+    {
+      "path": "repos/agents-toolbelt/skills/atb-release-installer-security/SKILL.md",
+      "sha256": "f029cfba770dc9b6da6bc1e463ba24a2fd71f7b58a0416e28b9c3b2f6cf88879",
+      "protected": true
+    },
+    {
+      "path": "repos/agents-toolbelt/skills/atb-state-plan-ownership/SKILL.md",
+      "sha256": "c51f53984f21c5472b144493fa3fc4a2492ac14ca6c1ad8e0968d1d4a0ab8e6c",
+      "protected": true
+    },
+    {
+      "path": "repos/agents-toolbelt/unknowns.yml",
+      "sha256": "fbf299071345cb1f342723e54580c3f7fc4e5a85ee42245c2e1ccf560b4d60b0",
+      "protected": true
+    }
+  ],
+  "verified": false,
+  "warnings": [
+    {
+      "code": "approved-unverified",
+      "message": "Pack is human-approved but eval replay has not verified it."
+    }
+  ]
+}

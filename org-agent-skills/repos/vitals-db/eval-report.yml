@@ -1,0 +1,447 @@
+{
+  "repo_id": "vitals-db",
+  "adapter": "fixture",
+  "pack_ref": "repos/vitals-db/approval.yml",
+  "repo_source_commit": "37ba3b380258b10aeed7e5e81fd7635aaf684f01",
+  "baseline_pass_rate": 0.5556,
+  "skill_pack_pass_rate": 1.0,
+  "baseline_delta": 0.4444,
+  "rediscovery_cost_delta": 0.5036,
+  "status": "development",
+  "blocking_unknowns": [
+    "unk_001"
+  ],
+  "command_approvals_used": [
+    "python scripts/check-pack-shape.py",
+    "harness validate vitals-db"
+  ],
+  "development": true,
+  "baseline": {
+    "run": "baseline",
+    "pack_ref": null,
+    "tasks": [
+      {
+        "task_id": "repo-knowledge-readme",
+        "required_facts_score": 1.0,
+        "required_files_score": 1.0,
+        "required_commands_score": 1.0,
+        "forbidden_claims_score": 1.0,
+        "evidence_score": 1.0,
+        "latency_or_steps": 6,
+        "passed": true,
+        "forbidden_hits": [],
+        "evidence": [
+          "onboarding-summary.md"
+        ],
+        "answer": "Summarize the repo purpose from scan evidence.\nEvidence: onboarding-summary.md\nFiles: onboarding-summary.md\nFacts: Onboarding Summary\nCommands: ",
+        "metrics": {
+          "tool_calls": 2,
+          "file_reads": 2,
+          "searches": 2,
+          "command_attempts": 1,
+          "elapsed_adapter_steps": 6
+        }
+      },
+      {
+        "task_id": "repo-knowledge-manifest",
+        "required_facts_score": 1.0,
+        "required_files_score": 1.0,
+        "required_commands_score": 1.0,
+        "forbidden_claims_score": 1.0,
+        "evidence_score": 1.0,
+        "latency_or_steps": 6,
+        "passed": true,
+        "forbidden_hits": [],
+        "evidence": [
+          "scan/scan-manifest.yml"
+        ],
+        "answer": "Find the package manifest evidence.\nEvidence: scan/scan-manifest.yml\nFiles: scan/scan-manifest.yml\nFacts: package.json\nCommands: ",
+        "metrics": {
+          "tool_calls": 2,
+          "file_reads": 2,
+          "searches": 2,
+          "command_attempts": 1,
+          "elapsed_adapter_steps": 6
+        }
+      },
+      {
+        "task_id": "command-selection-tests",
+        "required_facts_score": 0.0,
+        "required_files_score": 1.0,
+        "required_commands_score": 0.0,
+        "forbidden_claims_score": 1.0,
+        "evidence_score": 1.0,
+        "latency_or_steps": 7,
+        "passed": false,
+        "forbidden_hits": [],
+        "evidence": [
+          "scan/hypothesis-map.yml"
+        ],
+        "answer": "Choose the narrowest likely test command.\nEvidence: scan/hypothesis-map.yml\nFiles: scan/hypothesis-map.yml\nFacts: \nCommands: ",
+        "metrics": {
+          "tool_calls": 2,
+          "file_reads": 2,
+          "searches": 2,
+          "command_attempts": 2,
+          "elapsed_adapter_steps": 7
+        }
+      },
+      {
+        "task_id": "safe-procedure-sensitive-files",
+        "required_facts_score": 1.0,
+        "required_files_score": 1.0,
+        "required_commands_score": 1.0,
+        "forbidden_claims_score": 1.0,
+        "evidence_score": 1.0,
+        "latency_or_steps": 6,
+        "passed": true,
+        "forbidden_hits": [],
+        "evidence": [
+          "scan/scan-manifest.yml"
+        ],
+        "answer": "Confirm sensitive files are not read into generated skills.\nEvidence: scan/scan-manifest.yml\nFiles: scan/scan-manifest.yml\nFacts: sensitive filename policy\nCommands: ",
+        "metrics": {
+          "tool_calls": 2,
+          "file_reads": 2,
+          "searches": 2,
+          "command_attempts": 1,
+          "elapsed_adapter_steps": 6
+        }
+      },
+      {
+        "task_id": "resolver-generated-skills",
+        "required_facts_score": 0.3333,
+        "required_files_score": 1.0,
+        "required_commands_score": 1.0,
+        "forbidden_claims_score": 1.0,
+        "evidence_score": 1.0,
+        "latency_or_steps": 8,
+        "passed": false,
+        "forbidden_hits": [],
+        "evidence": [
+          "resolvers.yml"
+        ],
+        "answer": "Route skill-trigger questions to generated repo skills.\nEvidence: resolvers.yml\nFiles: resolvers.yml\nFacts: analytics-query-dto-contracts\nCommands: ",
+        "metrics": {
+          "tool_calls": 2,
+          "file_reads": 2,
+          "searches": 6,
+          "command_attempts": 1,
+          "elapsed_adapter_steps": 8
+        }
+      },
+      {
+        "task_id": "skill-metadata-routing",
+        "required_facts_score": 1.0,
+        "required_files_score": 1.0,
+        "required_commands_score": 1.0,
+        "forbidden_claims_score": 1.0,
+        "evidence_score": 1.0,
+        "latency_or_steps": 6,
+        "passed": true,
+        "forbidden_hits": [],
+        "evidence": [
+          "skills/analytics-query-dto-contracts/SKILL.md"
+        ],
+        "answer": "Use concrete skill metadata to choose the smallest relevant skill.\nEvidence: skills/analytics-query-dto-contracts/SKILL.md\nFiles: skills/analytics-query-dto-contracts/SKILL.md\nFacts: description:\nCommands: ",
+        "metrics": {
+          "tool_calls": 2,
+          "file_reads": 2,
+          "searches": 2,
+          "command_attempts": 1,
+          "elapsed_adapter_steps": 6
+        }
+      },
+      {
+        "task_id": "unknowns-preserved",
+        "required_facts_score": 1.0,
+        "required_files_score": 1.0,
+        "required_commands_score": 1.0,
+        "forbidden_claims_score": 1.0,
+        "evidence_score": 1.0,
+        "latency_or_steps": 6,
+        "passed": true,
+        "forbidden_hits": [],
+        "evidence": [
+          "unknowns.yml"
+        ],
+        "answer": "Keep unresolved findings visible for human review.\nEvidence: unknowns.yml\nFiles: unknowns.yml\nFacts: Which command is the narrowest reliable unit test command?\nCommands: ",
+        "metrics": {
+          "tool_calls": 2,
+          "file_reads": 2,
+          "searches": 2,
+          "command_attempts": 1,
+          "elapsed_adapter_steps": 6
+        }
+      },
+      {
+        "task_id": "multiple-small-skills",
+        "required_facts_score": 0.5,
+        "required_files_score": 0.3333,
+        "required_commands_score": 1.0,
+        "forbidden_claims_score": 1.0,
+        "evidence_score": 1.0,
+        "latency_or_steps": 9,
+        "passed": false,
+        "forbidden_hits": [],
+        "evidence": [
+          "skills/analytics-query-dto-contracts/SKILL.md"
+        ],
+        "answer": "Prefer specialized generated skills over one broad catch-all.\nEvidence: skills/analytics-query-dto-contracts/SKILL.md\nFiles: skills/analytics-query-dto-contracts/SKILL.md\nFacts: analytics-query-dto-contracts\nCommands: ",
+        "metrics": {
+          "tool_calls": 2,
+          "file_reads": 6,
+          "searches": 4,
+          "command_attempts": 1,
+          "elapsed_adapter_steps": 9
+        }
+      },
+      {
+        "task_id": "draft-status-report",
+        "required_facts_score": 0.5,
+        "required_files_score": 1.0,
+        "required_commands_score": 1.0,
+        "forbidden_claims_score": 1.0,
+        "evidence_score": 1.0,
+        "latency_or_steps": 7,
+        "passed": false,
+        "forbidden_hits": [],
+        "evidence": [
+          "pack-report.md"
+        ],
+        "answer": "Verify generated artifacts remain draft and reviewable.\nEvidence: pack-report.md\nFiles: pack-report.md\nFacts: Status: draft\nCommands: ",
+        "metrics": {
+          "tool_calls": 2,
+          "file_reads": 2,
+          "searches": 4,
+          "command_attempts": 1,
+          "elapsed_adapter_steps": 7
+        }
+      }
+    ],
+    "metrics": {
+      "tool_calls": 18,
+      "file_reads": 22,
+      "searches": 26,
+      "command_attempts": 10,
+      "elapsed_adapter_steps": 61
+    },
+    "rediscovery_cost": 137,
+    "pass_rate": 0.5556
+  },
+  "skill_pack": {
+    "run": "skill_pack",
+    "pack_ref": "repos/vitals-db/approval.yml",
+    "tasks": [
+      {
+        "task_id": "repo-knowledge-readme",
+        "required_facts_score": 1.0,
+        "required_files_score": 1.0,
+        "required_commands_score": 1.0,
+        "forbidden_claims_score": 1.0,
+        "evidence_score": 1.0,
+        "latency_or_steps": 3,
+        "passed": true,
+        "forbidden_hits": [],
+        "evidence": [
+          "onboarding-summary.md"
+        ],
+        "answer": "Summarize the repo purpose from scan evidence.\nEvidence: onboarding-summary.md\nFiles: onboarding-summary.md\nFacts: Onboarding Summary\nCommands: ",
+        "metrics": {
+          "tool_calls": 1,
+          "file_reads": 1,
+          "searches": 1,
+          "command_attempts": 0,
+          "elapsed_adapter_steps": 3
+        }
+      },
+      {
+        "task_id": "repo-knowledge-manifest",
+        "required_facts_score": 1.0,
+        "required_files_score": 1.0,
+        "required_commands_score": 1.0,
+        "forbidden_claims_score": 1.0,
+        "evidence_score": 1.0,
+        "latency_or_steps": 3,
+        "passed": true,
+        "forbidden_hits": [],
+        "evidence": [
+          "scan/scan-manifest.yml"
+        ],
+        "answer": "Find the package manifest evidence.\nEvidence: scan/scan-manifest.yml\nFiles: scan/scan-manifest.yml\nFacts: package.json\nCommands: ",
+        "metrics": {
+          "tool_calls": 1,
+          "file_reads": 1,
+          "searches": 1,
+          "command_attempts": 0,
+          "elapsed_adapter_steps": 3
+        }
+      },
+      {
+        "task_id": "command-selection-tests",
+        "required_facts_score": 1.0,
+        "required_files_score": 1.0,
+        "required_commands_score": 1.0,
+        "forbidden_claims_score": 1.0,
+        "evidence_score": 1.0,
+        "latency_or_steps": 4,
+        "passed": true,
+        "forbidden_hits": [],
+        "evidence": [
+          "scan/hypothesis-map.yml"
+        ],
+        "answer": "Choose the narrowest likely test command.\nEvidence: scan/hypothesis-map.yml\nFiles: scan/hypothesis-map.yml\nFacts: test_command_candidates\nCommands: npm test",
+        "metrics": {
+          "tool_calls": 1,
+          "file_reads": 1,
+          "searches": 1,
+          "command_attempts": 1,
+          "elapsed_adapter_steps": 4
+        }
+      },
+      {
+        "task_id": "safe-procedure-sensitive-files",
+        "required_facts_score": 1.0,
+        "required_files_score": 1.0,
+        "required_commands_score": 1.0,
+        "forbidden_claims_score": 1.0,
+        "evidence_score": 1.0,
+        "latency_or_steps": 3,
+        "passed": true,
+        "forbidden_hits": [],
+        "evidence": [
+          "scan/scan-manifest.yml"
+        ],
+        "answer": "Confirm sensitive files are not read into generated skills.\nEvidence: scan/scan-manifest.yml\nFiles: scan/scan-manifest.yml\nFacts: sensitive filename policy\nCommands: ",
+        "metrics": {
+          "tool_calls": 1,
+          "file_reads": 1,
+          "searches": 1,
+          "command_attempts": 0,
+          "elapsed_adapter_steps": 3
+        }
+      },
+      {
+        "task_id": "resolver-generated-skills",
+        "required_facts_score": 1.0,
+        "required_files_score": 1.0,
+        "required_commands_score": 1.0,
+        "forbidden_claims_score": 1.0,
+        "evidence_score": 1.0,
+        "latency_or_steps": 5,
+        "passed": true,
+        "forbidden_hits": [],
+        "evidence": [
+          "resolvers.yml"
+        ],
+        "answer": "Route skill-trigger questions to generated repo skills.\nEvidence: resolvers.yml\nFiles: resolvers.yml\nFacts: analytics-query-dto-contracts, apple-health-ingest-pipeline, composite-performance-analytics\nCommands: ",
+        "metrics": {
+          "tool_calls": 1,
+          "file_reads": 1,
+          "searches": 3,
+          "command_attempts": 0,
+          "elapsed_adapter_steps": 5
+        }
+      },
+      {
+        "task_id": "skill-metadata-routing",
+        "required_facts_score": 1.0,
+        "required_files_score": 1.0,
+        "required_commands_score": 1.0,
+        "forbidden_claims_score": 1.0,
+        "evidence_score": 1.0,
+        "latency_or_steps": 3,
+        "passed": true,
+        "forbidden_hits": [],
+        "evidence": [
+          "skills/analytics-query-dto-contracts/SKILL.md"
+        ],
+        "answer": "Use concrete skill metadata to choose the smallest relevant skill.\nEvidence: skills/analytics-query-dto-contracts/SKILL.md\nFiles: skills/analytics-query-dto-contracts/SKILL.md\nFacts: description:\nCommands: ",
+        "metrics": {
+          "tool_calls": 1,
+          "file_reads": 1,
+          "searches": 1,
+          "command_attempts": 0,
+          "elapsed_adapter_steps": 3
+        }
+      },
+      {
+        "task_id": "unknowns-preserved",
+        "required_facts_score": 1.0,
+        "required_files_score": 1.0,
+        "required_commands_score": 1.0,
+        "forbidden_claims_score": 1.0,
+        "evidence_score": 1.0,
+        "latency_or_steps": 3,
+        "passed": true,
+        "forbidden_hits": [],
+        "evidence": [
+          "unknowns.yml"
+        ],
+        "answer": "Keep unresolved findings visible for human review.\nEvidence: unknowns.yml\nFiles: unknowns.yml\nFacts: Which command is the narrowest reliable unit test command?\nCommands: ",
+        "metrics": {
+          "tool_calls": 1,
+          "file_reads": 1,
+          "searches": 1,
+          "command_attempts": 0,
+          "elapsed_adapter_steps": 3
+        }
+      },
+      {
+        "task_id": "multiple-small-skills",
+        "required_facts_score": 1.0,
+        "required_files_score": 1.0,
+        "required_commands_score": 1.0,
+        "forbidden_claims_score": 1.0,
+        "evidence_score": 1.0,
+        "latency_or_steps": 6,
+        "passed": true,
+        "forbidden_hits": [],
+        "evidence": [
+          "skills/analytics-query-dto-contracts/SKILL.md",
+          "skills/apple-health-ingest-pipeline/SKILL.md",
+          "skills/composite-performance-analytics/SKILL.md"
+        ],
+        "answer": "Prefer specialized generated skills over one broad catch-all.\nEvidence: skills/analytics-query-dto-contracts/SKILL.md, skills/apple-health-ingest-pipeline/SKILL.md, skills/composite-performance-analytics/SKILL.md\nFiles: skills/analytics-query-dto-contracts/SKILL.md, skills/apple-health-ingest-pipeline/SKILL.md, skills/composite-performance-analytics/SKILL.md\nFacts: analytics-query-dto-contracts, apple-health-ingest-pipeline\nCommands: ",
+        "metrics": {
+          "tool_calls": 1,
+          "file_reads": 3,
+          "searches": 2,
+          "command_attempts": 0,
+          "elapsed_adapter_steps": 6
+        }
+      },
+      {
+        "task_id": "draft-status-report",
+        "required_facts_score": 1.0,
+        "required_files_score": 1.0,
+        "required_commands_score": 1.0,
+        "forbidden_claims_score": 1.0,
+        "evidence_score": 1.0,
+        "latency_or_steps": 4,
+        "passed": true,
+        "forbidden_hits": [],
+        "evidence": [
+          "pack-report.md"
+        ],
+        "answer": "Verify generated artifacts remain draft and reviewable.\nEvidence: pack-report.md\nFiles: pack-report.md\nFacts: Status: draft, vitals-db\nCommands: ",
+        "metrics": {
+          "tool_calls": 1,
+          "file_reads": 1,
+          "searches": 2,
+          "command_attempts": 0,
+          "elapsed_adapter_steps": 4
+        }
+      }
+    ],
+    "metrics": {
+      "tool_calls": 9,
+      "file_reads": 11,
+      "searches": 13,
+      "command_attempts": 1,
+      "elapsed_adapter_steps": 34
+    },
+    "rediscovery_cost": 68,
+    "pass_rate": 1.0
+  }
+}

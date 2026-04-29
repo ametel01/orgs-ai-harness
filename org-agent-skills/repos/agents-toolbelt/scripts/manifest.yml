@@ -1,0 +1,24 @@
+{
+  "scripts": [
+    {
+      "path": "scripts/check-pack-shape.py",
+      "review_required": true,
+      "deterministic": true,
+      "local_only": true
+    }
+  ],
+  "command_permissions": [
+    {
+      "command": "python scripts/check-pack-shape.py",
+      "reason": "Run the deterministic local draft pack shape check.",
+      "review_required": true,
+      "local_only": true
+    },
+    {
+      "command": "harness validate agents-toolbelt",
+      "reason": "Validate generated repo onboarding and approval metadata locally.",
+      "review_required": true,
+      "local_only": true
+    }
+  ]
+}

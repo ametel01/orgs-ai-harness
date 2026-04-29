@@ -1,0 +1,85 @@
+{
+  "repo_id": "horizon-starknet",
+  "seed_context": {
+    "purpose": {
+      "value": null,
+      "source": "manual repo registration"
+    },
+    "owner": {
+      "value": "ametel01",
+      "source": "manual repo registration"
+    }
+  },
+  "evidence_categories": {
+    "ci_config": [
+      ".github/workflows/cairo-build.yml",
+      ".github/workflows/cairo-fmt.yml",
+      ".github/workflows/cairo-lint.yml",
+      ".github/workflows/cairo-test.yml",
+      ".github/workflows/frontend-ci.yml",
+      ".github/workflows/frontend-deploy.yml",
+      ".github/workflows/indexer-ci.yml",
+      ".github/workflows/release.yml"
+    ],
+    "agent_docs": [
+      "AGENTS.md"
+    ],
+    "readme": [
+      "README.md"
+    ]
+  },
+  "hypotheses": [
+    {
+      "name": "project_type",
+      "value": "documented_repository",
+      "evidence_paths": [
+        "README.md"
+      ],
+      "unknown": false
+    },
+    {
+      "name": "package_manager",
+      "value": "unknown",
+      "evidence_paths": [],
+      "unknown": true
+    },
+    {
+      "name": "test_command_candidates",
+      "value": [],
+      "evidence_paths": [],
+      "unknown": true
+    },
+    {
+      "name": "ci_validation",
+      "value": "ci configuration present",
+      "evidence_paths": [
+        ".github/workflows/cairo-build.yml",
+        ".github/workflows/cairo-fmt.yml",
+        ".github/workflows/cairo-lint.yml",
+        ".github/workflows/cairo-test.yml",
+        ".github/workflows/frontend-ci.yml",
+        ".github/workflows/frontend-deploy.yml",
+        ".github/workflows/indexer-ci.yml",
+        ".github/workflows/release.yml"
+      ],
+      "unknown": false
+    },
+    {
+      "name": "agent_documentation",
+      "value": "agent documentation present",
+      "evidence_paths": [
+        "AGENTS.md"
+      ],
+      "unknown": false
+    },
+    {
+      "name": "scripts",
+      "value": [],
+      "evidence_paths": [],
+      "unknown": true
+    }
+  ],
+  "unknown_refs": [
+    "unk_001"
+  ]
+}

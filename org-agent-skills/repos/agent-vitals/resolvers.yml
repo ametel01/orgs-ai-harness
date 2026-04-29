@@ -1,0 +1,46 @@
+{
+  "resolvers": [
+    {
+      "intent": "use agent-vitals-cli-reports",
+      "skill": "agent-vitals-cli-reports",
+      "when": [
+        "repo"
+      ]
+    },
+    {
+      "intent": "use agent-vitals-dashboard-docs",
+      "skill": "agent-vitals-dashboard-docs",
+      "when": [
+        "repo"
+      ]
+    },
+    {
+      "intent": "use agent-vitals-metrics-regressions",
+      "skill": "agent-vitals-metrics-regressions",
+      "when": [
+        "repo"
+      ]
+    },
+    {
+      "intent": "use agent-vitals-packaging-installs",
+      "skill": "agent-vitals-packaging-installs",
+      "when": [
+        "repo"
+      ]
+    },
+    {
+      "intent": "use agent-vitals-prescriptions",
+      "skill": "agent-vitals-prescriptions",
+      "when": [
+        "repo"
+      ]
+    },
+    {
+      "intent": "use agent-vitals-session-ingestion",
+      "skill": "agent-vitals-session-ingestion",
+      "when": [
+        "repo"
+      ]
+    }
+  ]
+}

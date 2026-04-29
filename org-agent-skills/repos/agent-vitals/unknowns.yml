@@ -1,0 +1,50 @@
+{
+  "unknowns": [
+    {
+      "id": "unk_001",
+      "question": "Which command is the narrowest reliable unit test command?",
+      "why_it_matters": "Eval and skill generation need reproducible validation commands.",
+      "severity": "blocking",
+      "status": "open",
+      "evidence": [
+        {
+          "path": "package.json",
+          "note": "Package manifest found; test script needs confirmation."
+        }
+      ],
+      "recommended_investigation": "Inspect package scripts and CI job command usage."
+    }
+  ],
+  "candidate_org_skills": [
+    {
+      "name": "agent-vitals-cli-reports",
+      "status": "candidate",
+      "reason": "Inferred only from agent-vitals; requires cross-repo review before org-wide acceptance."
+    },
+    {
+      "name": "agent-vitals-dashboard-docs",
+      "status": "candidate",
+      "reason": "Inferred only from agent-vitals; requires cross-repo review before org-wide acceptance."
+    },
+    {
+      "name": "agent-vitals-metrics-regressions",
+      "status": "candidate",
+      "reason": "Inferred only from agent-vitals; requires cross-repo review before org-wide acceptance."
+    },
+    {
+      "name": "agent-vitals-packaging-installs",
+      "status": "candidate",
+      "reason": "Inferred only from agent-vitals; requires cross-repo review before org-wide acceptance."
+    },
+    {
+      "name": "agent-vitals-prescriptions",
+      "status": "candidate",
+      "reason": "Inferred only from agent-vitals; requires cross-repo review before org-wide acceptance."
+    },
+    {
+      "name": "agent-vitals-session-ingestion",
+      "status": "candidate",
+      "reason": "Inferred only from agent-vitals; requires cross-repo review before org-wide acceptance."
+    }
+  ]
+}

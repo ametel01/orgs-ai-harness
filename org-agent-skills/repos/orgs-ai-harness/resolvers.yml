@@ -1,0 +1,102 @@
+{
+  "resolvers": [
+    {
+      "intent": "use approval-eval-cache-lifecycle",
+      "skill": "approval-eval-cache-lifecycle",
+      "when": [
+        "use",
+        "this",
+        "skill",
+        "when",
+        "changing",
+        "draft",
+        "approval",
+        "protected"
+      ]
+    },
+    {
+      "intent": "use github-repo-discovery",
+      "skill": "github-repo-discovery",
+      "when": [
+        "use",
+        "this",
+        "skill",
+        "when",
+        "modifying",
+        "github",
+        "repository",
+        "discovery"
+      ]
+    },
+    {
+      "intent": "use harness-cli-workflows",
+      "skill": "harness-cli-workflows",
+      "when": [
+        "use",
+        "this",
+        "skill",
+        "when",
+        "changing",
+        "orgs-ai-harness",
+        "cli",
+        "commands"
+      ]
+    },
+    {
+      "intent": "use harness-config-registry",
+      "skill": "harness-config-registry",
+      "when": [
+        "use",
+        "this",
+        "skill",
+        "when",
+        "editing",
+        "harness",
+        "yml",
+        "parsing"
+      ]
+    },
+    {
+      "intent": "use harness-validation-tests",
+      "skill": "harness-validation-tests",
+      "when": [
+        "use",
+        "this",
+        "skill",
+        "when",
+        "adding",
+        "or",
+        "fixing",
+        "orgs-ai-harness"
+      ]
+    },
+    {
+      "intent": "use proposal-refresh-workflow",
+      "skill": "proposal-refresh-workflow",
+      "when": [
+        "use",
+        "this",
+        "skill",
+        "when",
+        "modifying",
+        "proposal-first",
+        "learning",
+        "trace-backed"
+      ]
+    },
+    {
+      "intent": "use repo-onboarding-generation",
+      "skill": "repo-onboarding-generation",
+      "when": [
+        "use",
+        "this",
+        "skill",
+        "when",
+        "changing",
+        "repo",
+        "onboarding",
+        "scans"
+      ]
+    }
+  ]
+}

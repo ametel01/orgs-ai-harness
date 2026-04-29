@@ -1,0 +1,163 @@
+{
+  "repo_id": "horizon-starknet",
+  "repo_path": "../../horizon-starknet",
+  "repo_source_commit": "0af65bbdf35d923d9305d302a4bc415905be7929",
+  "scanned_paths": [
+    {
+      "path": ".github/workflows/cairo-build.yml",
+      "category": "ci_config",
+      "bytes": 479
+    },
+    {
+      "path": ".github/workflows/cairo-fmt.yml",
+      "category": "ci_config",
+      "bytes": 495
+    },
+    {
+      "path": ".github/workflows/cairo-lint.yml",
+      "category": "ci_config",
+      "bytes": 482
+    },
+    {
+      "path": ".github/workflows/cairo-test.yml",
+      "category": "ci_config",
+      "bytes": 617
+    },
+    {
+      "path": ".github/workflows/frontend-ci.yml",
+      "category": "ci_config",
+      "bytes": 2987
+    },
+    {
+      "path": ".github/workflows/frontend-deploy.yml",
+      "category": "ci_config",
+      "bytes": 4460
+    },
+    {
+      "path": ".github/workflows/indexer-ci.yml",
+      "category": "ci_config",
+      "bytes": 1318
+    },
+    {
+      "path": ".github/workflows/release.yml",
+      "category": "ci_config",
+      "bytes": 510
+    },
+    {
+      "path": "AGENTS.md",
+      "category": "agent_docs",
+      "bytes": 2316
+    },
+    {
+      "path": "README.md",
+      "category": "readme",
+      "bytes": 20438
+    }
+  ],
+  "skipped_paths": [
+    {
+      "path": ".claude/settings.local.json",
+      "reason": "sensitive filename policy"
+    },
+    {
+      "path": ".env.example",
+      "reason": "sensitive filename policy"
+    },
+    {
+      "path": "contracts/src/interfaces/i_yield_token.cairo",
+      "reason": "sensitive filename policy"
+    },
+    {
+      "path": "contracts/src/mocks/mock_reentrant_token.cairo",
+      "reason": "sensitive filename policy"
+    },
+    {
+      "path": "contracts/src/mocks/mock_yield_token.cairo",
+      "reason": "sensitive filename policy"
+    },
+    {
+      "path": "contracts/tests/router/test_router_single_token_lp.cairo",
+      "reason": "sensitive filename policy"
+    },
+    {
+      "path": "contracts/tests/router/test_router_token_aggregation.cairo",
+      "reason": "sensitive filename policy"
+    },
+    {
+      "path": "contracts/tests/tokens.cairo",
+      "reason": "sensitive filename policy"
+    },
+    {
+      "path": "docs/BRIDGED_YIELD_TOKENS.md",
+      "reason": "sensitive filename policy"
+    },
+    {
+      "path": "docs/gap-analysis/01-core-token-system-gaps.md",
+      "reason": "sensitive filename policy"
+    },
+    {
+      "path": "packages/frontend/.env.example",
+      "reason": "sensitive filename policy"
+    },
+    {
+      "path": "packages/frontend/e2e/token-aggregator-swap.spec.ts",
+      "reason": "sensitive filename policy"
+    },
+    {
+      "path": "packages/frontend/src/entities/token/ui/TokenAmount.tsx",
+      "reason": "sensitive filename policy"
+    },
+    {
+      "path": "packages/frontend/src/features/liquidity/model/useTokenLiquidity.ts",
+      "reason": "sensitive filename policy"
+    },
+    {
+      "path": "packages/frontend/src/features/liquidity/ui/TokenAggregatorLiquidityForm.tsx",
+      "reason": "sensitive filename policy"
+    },
+    {
+      "path": "packages/frontend/src/features/mint/ui/TokenInput.tsx",
+      "reason": "sensitive filename policy"
+    },
+    {
+      "path": "packages/frontend/src/features/portfolio/model/useTokenBalance.test.ts",
+      "reason": "sensitive filename policy"
+    },
+    {
+      "path": "packages/frontend/src/features/portfolio/model/useTokenBalance.ts",
+      "reason": "sensitive filename policy"
+    },
+    {
+      "path": "packages/frontend/src/features/rewards/model/useMarketRewardTokens.ts",
+      "reason": "sensitive filename policy"
+    },
+    {
+      "path": "packages/frontend/src/features/rewards/model/useRewardTokens.ts",
+      "reason": "sensitive filename policy"
+    },
+    {
+      "path": "packages/frontend/src/features/rewards/model/useYTRewardTokens.ts",
+      "reason": "sensitive filename policy"
+    },
+    {
+      "path": "packages/frontend/src/features/swap/model/useTokenSwap.ts",
+      "reason": "sensitive filename policy"
+    },
+    {
+      "path": "packages/frontend/src/features/swap/model/useTokenYtSwap.ts",
+      "reason": "sensitive filename policy"
+    },
+    {
+      "path": "packages/frontend/src/features/swap/ui/TokenAggregatorSwapForm.tsx",
+      "reason": "sensitive filename policy"
+    },
+    {
+      "path": "packages/frontend/src/features/yield/model/useSyTokenValidation.ts",
+      "reason": "sensitive filename policy"
+    },
+    {
+      "path": "packages/indexer/.env.example",
+      "reason": "sensitive filename policy"
+    }
+  ]
+}

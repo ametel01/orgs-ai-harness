@@ -1,0 +1,46 @@
+{
+  "repo_id": "vitals-db",
+  "repo_path": "../../vitals-db",
+  "repo_source_commit": "37ba3b380258b10aeed7e5e81fd7635aaf684f01",
+  "scanned_paths": [
+    {
+      "path": ".github/workflows/ci.yml",
+      "category": "ci_config",
+      "bytes": 376
+    },
+    {
+      "path": "README.md",
+      "category": "readme",
+      "bytes": 7098
+    },
+    {
+      "path": "package.json",
+      "category": "package_manifest",
+      "bytes": 841
+    },
+    {
+      "path": "scripts/gen-fixture.ts",
+      "category": "script",
+      "bytes": 5530
+    },
+    {
+      "path": "tsconfig.json",
+      "category": "important_config",
+      "bytes": 234
+    }
+  ],
+  "skipped_paths": [
+    {
+      "path": "node_modules/.bun/caniuse-lite@1.0.30001788/node_modules/caniuse-lite/data/features/credential-management.js",
+      "reason": "sensitive filename policy"
+    },
+    {
+      "path": "node_modules/.bun/postcss@8.4.31/node_modules/postcss/lib/tokenize.js",
+      "reason": "sensitive filename policy"
+    },
+    {
+      "path": "node_modules/.bun/typescript@5.6.3/node_modules/typescript/lib/cancellationToken.js",
+      "reason": "sensitive filename policy"
+    }
+  ]
+}

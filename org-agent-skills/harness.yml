@@ -1,0 +1,73 @@
+org:
+  name: ametel01
+  skills_version: 1
+
+providers: []
+
+repos:
+  - id: "orgs-ai-harness"
+    name: "orgs-ai-harness"
+    owner: "ametel01"
+    purpose: null
+    url: "https://github.com/ametel01/orgs-ai-harness"
+    default_branch: "main"
+    local_path: ".."
+    coverage_status: "approved-unverified"
+    active: true
+    deactivation_reason: null
+    pack_ref: "repos/orgs-ai-harness/approval.yml"
+    external: false
+  - id: "vitals-db"
+    name: "vitals-db"
+    owner: "ametel01"
+    purpose: null
+    url: "https://github.com/ametel01/vitals-db"
+    default_branch: "main"
+    local_path: "../../vitals-db"
+    coverage_status: "approved-unverified"
+    active: true
+    deactivation_reason: null
+    pack_ref: "repos/vitals-db/approval.yml"
+    external: false
+  - id: "horizon-starknet"
+    name: "horizon-starknet"
+    owner: "ametel01"
+    purpose: null
+    url: "https://github.com/ametel01/horizon-starknet"
+    default_branch: "main"
+    local_path: "../../horizon-starknet"
+    coverage_status: "approved-unverified"
+    active: true
+    deactivation_reason: null
+    pack_ref: "repos/horizon-starknet/approval.yml"
+    external: false
+  - id: "agent-vitals"
+    name: "agent-vitals"
+    owner: "ametel01"
+    purpose: null
+    url: "https://github.com/ametel01/agent-vitals"
+    default_branch: "master"
+    local_path: "../../agent-vitals"
+    coverage_status: "approved-unverified"
+    active: true
+    deactivation_reason: null
+    pack_ref: "repos/agent-vitals/approval.yml"
+    external: false
+  - id: "agents-toolbelt"
+    name: "agents-toolbelt"
+    owner: "ametel01"
+    purpose: null
+    url: "https://github.com/ametel01/agents-toolbelt"
+    default_branch: "main"
+    local_path: "../../agents-toolbelt"
+    coverage_status: "approved-unverified"
+    active: true
+    deactivation_reason: null
+    pack_ref: "repos/agents-toolbelt/approval.yml"
+    external: false
+
+redaction:
+  globs: []
+  regexes: []
+
+command_permissions: []

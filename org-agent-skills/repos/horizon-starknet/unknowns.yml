@@ -1,0 +1,45 @@
+{
+  "unknowns": [
+    {
+      "id": "unk_001",
+      "question": "Which command is the narrowest reliable unit test command?",
+      "why_it_matters": "Eval and skill generation need reproducible validation commands.",
+      "severity": "blocking",
+      "status": "open",
+      "evidence": [
+        {
+          "path": ".github/workflows/cairo-build.yml",
+          "note": "Repository evidence found, but test command is unknown."
+        }
+      ],
+      "recommended_investigation": "Inspect package scripts and CI job command usage."
+    }
+  ],
+  "candidate_org_skills": [
+    {
+      "name": "horizon-cairo-contracts",
+      "status": "candidate",
+      "reason": "Inferred only from horizon-starknet; requires cross-repo review before org-wide acceptance."
+    },
+    {
+      "name": "horizon-deploy-upgrade",
+      "status": "candidate",
+      "reason": "Inferred only from horizon-starknet; requires cross-repo review before org-wide acceptance."
+    },
+    {
+      "name": "horizon-frontend-starknet",
+      "status": "candidate",
+      "reason": "Inferred only from horizon-starknet; requires cross-repo review before org-wide acceptance."
+    },
+    {
+      "name": "horizon-indexer-events",
+      "status": "candidate",
+      "reason": "Inferred only from horizon-starknet; requires cross-repo review before org-wide acceptance."
+    },
+    {
+      "name": "horizon-quality-gates",
+      "status": "candidate",
+      "reason": "Inferred only from horizon-starknet; requires cross-repo review before org-wide acceptance."
+    }
+  ]
+}

@@ -1,0 +1,178 @@
+{
+  "schema_version": 1,
+  "repo_id": "horizon-starknet",
+  "status": "approved-unverified",
+  "decision": "approved",
+  "pack_ref": "repos/horizon-starknet/approval.yml",
+  "actor": "user",
+  "timestamp": "2026-04-29T01:34:33Z",
+  "rationale": "Reviewed through interactive setup",
+  "approved_artifacts": [
+    "repos/horizon-starknet/evals/onboarding.yml",
+    "repos/horizon-starknet/llm-output/claude/skills/horizon-cairo-contracts/SKILL.md",
+    "repos/horizon-starknet/llm-output/claude/skills/horizon-deploy-upgrade/SKILL.md",
+    "repos/horizon-starknet/llm-output/claude/skills/horizon-frontend-starknet/SKILL.md",
+    "repos/horizon-starknet/llm-output/claude/skills/horizon-indexer-events/SKILL.md",
+    "repos/horizon-starknet/llm-output/claude/skills/horizon-quality-gates/SKILL.md",
+    "repos/horizon-starknet/llm-output/codex/skills/horizon-cairo-contracts/SKILL.md",
+    "repos/horizon-starknet/llm-output/codex/skills/horizon-deploy-upgrade/SKILL.md",
+    "repos/horizon-starknet/llm-output/codex/skills/horizon-frontend-starknet/SKILL.md",
+    "repos/horizon-starknet/llm-output/codex/skills/horizon-indexer-events/SKILL.md",
+    "repos/horizon-starknet/llm-output/codex/skills/horizon-quality-gates/SKILL.md",
+    "repos/horizon-starknet/llm-skill-generation-prompt.md",
+    "repos/horizon-starknet/llm-skill-generation.log",
+    "repos/horizon-starknet/onboarding-summary.md",
+    "repos/horizon-starknet/pack-report.md",
+    "repos/horizon-starknet/resolvers.yml",
+    "repos/horizon-starknet/scan/hypothesis-map.yml",
+    "repos/horizon-starknet/scan/scan-manifest.yml",
+    "repos/horizon-starknet/scripts/check-pack-shape.py",
+    "repos/horizon-starknet/scripts/manifest.yml",
+    "repos/horizon-starknet/skills/horizon-cairo-contracts/SKILL.md",
+    "repos/horizon-starknet/skills/horizon-deploy-upgrade/SKILL.md",
+    "repos/horizon-starknet/skills/horizon-frontend-starknet/SKILL.md",
+    "repos/horizon-starknet/skills/horizon-indexer-events/SKILL.md",
+    "repos/horizon-starknet/skills/horizon-quality-gates/SKILL.md",
+    "repos/horizon-starknet/unknowns.yml"
+  ],
+  "excluded_artifacts": [],
+  "protected_artifacts": [
+    {
+      "path": "repos/horizon-starknet/evals/onboarding.yml",
+      "sha256": "83608c3abfff8d17a5381c1f8d7cf2ca0017ed71096d05bcfd318184ae5b106f",
+      "protected": true
+    },
+    {
+      "path": "repos/horizon-starknet/llm-output/claude/skills/horizon-cairo-contracts/SKILL.md",
+      "sha256": "1dc37ec1966a30f1c64ed9ef60025a81cb903eb615557e350ca6d2a779354368",
+      "protected": true
+    },
+    {
+      "path": "repos/horizon-starknet/llm-output/claude/skills/horizon-deploy-upgrade/SKILL.md",
+      "sha256": "f757225bdbfb0061c5a8f4dce624dca258fbedc53a787b00310b1551810de6f1",
+      "protected": true
+    },
+    {
+      "path": "repos/horizon-starknet/llm-output/claude/skills/horizon-frontend-starknet/SKILL.md",
+      "sha256": "5c7f439a6db5981d30978b31557658b022032b611232f229fb0c5f073f7a0852",
+      "protected": true
+    },
+    {
+      "path": "repos/horizon-starknet/llm-output/claude/skills/horizon-indexer-events/SKILL.md",
+      "sha256": "4696e5d998e78fd6b436a8165c205a246fc7ed85557d89320225a6bda1e5650b",
+      "protected": true
+    },
+    {
+      "path": "repos/horizon-starknet/llm-output/claude/skills/horizon-quality-gates/SKILL.md",
+      "sha256": "d296dd88d1f2be20e4b8e8df3a0db4c8062cfcc986ea62335a350566093a536d",
+      "protected": true
+    },
+    {
+      "path": "repos/horizon-starknet/llm-output/codex/skills/horizon-cairo-contracts/SKILL.md",
+      "sha256": "1dc37ec1966a30f1c64ed9ef60025a81cb903eb615557e350ca6d2a779354368",
+      "protected": true
+    },
+    {
+      "path": "repos/horizon-starknet/llm-output/codex/skills/horizon-deploy-upgrade/SKILL.md",
+      "sha256": "f757225bdbfb0061c5a8f4dce624dca258fbedc53a787b00310b1551810de6f1",
+      "protected": true
+    },
+    {
+      "path": "repos/horizon-starknet/llm-output/codex/skills/horizon-frontend-starknet/SKILL.md",
+      "sha256": "5c7f439a6db5981d30978b31557658b022032b611232f229fb0c5f073f7a0852",
+      "protected": true
+    },
+    {
+      "path": "repos/horizon-starknet/llm-output/codex/skills/horizon-indexer-events/SKILL.md",
+      "sha256": "4696e5d998e78fd6b436a8165c205a246fc7ed85557d89320225a6bda1e5650b",
+      "protected": true
+    },
+    {
+      "path": "repos/horizon-starknet/llm-output/codex/skills/horizon-quality-gates/SKILL.md",
+      "sha256": "d296dd88d1f2be20e4b8e8df3a0db4c8062cfcc986ea62335a350566093a536d",
+      "protected": true
+    },
+    {
+      "path": "repos/horizon-starknet/llm-skill-generation-prompt.md",
+      "sha256": "96c30ba2b1617fe96941d2ee1af396265e620982592f610320bc5e73e62893cf",
+      "protected": true
+    },
+    {
+      "path": "repos/horizon-starknet/llm-skill-generation.log",
+      "sha256": "b0535d7fdf1e730bc0faaa779ec1271fef380fbe57ccd35eda073820beb54302",
+      "protected": true
+    },
+    {
+      "path": "repos/horizon-starknet/onboarding-summary.md",
+      "sha256": "6030f48e0587349f144df0e7799f508cd98fd2014b1bb20b07a50f926df5a58a",
+      "protected": true
+    },
+    {
+      "path": "repos/horizon-starknet/pack-report.md",
+      "sha256": "ddd955d74724896245db286b201f6a45764650bbffa8cc594836790356828fb8",
+      "protected": true
+    },
+    {
+      "path": "repos/horizon-starknet/resolvers.yml",
+      "sha256": "c7b1bcb46a9cfbb588f882378f3c278c05aa549a0d868b300e56c8aa19fd45f2",
+      "protected": true
+    },
+    {
+      "path": "repos/horizon-starknet/scan/hypothesis-map.yml",
+      "sha256": "9869facd810b4ab58f3da0b7b4dcc255b95f5d0e15bb86c4aa65f6c1ca65dbdd",
+      "protected": true
+    },
+    {
+      "path": "repos/horizon-starknet/scan/scan-manifest.yml",
+      "sha256": "f2c57e77b6dd7e75969abe1dba5cdce672779a1e45f991b0f6f087f5dc6ad763",
+      "protected": true
+    },
+    {
+      "path": "repos/horizon-starknet/scripts/check-pack-shape.py",
+      "sha256": "a1b898093f9d3ac813a44abac51ad9d59d157820f68d3257357b5c56b9942223",
+      "protected": true
+    },
+    {
+      "path": "repos/horizon-starknet/scripts/manifest.yml",
+      "sha256": "660d125ca7c991196fab1deb68d938515cf99b0243de22f53bba6849051b8a69",
+      "protected": true
+    },
+    {
+      "path": "repos/horizon-starknet/skills/horizon-cairo-contracts/SKILL.md",
+      "sha256": "1dc37ec1966a30f1c64ed9ef60025a81cb903eb615557e350ca6d2a779354368",
+      "protected": true
+    },
+    {
+      "path": "repos/horizon-starknet/skills/horizon-deploy-upgrade/SKILL.md",
+      "sha256": "f757225bdbfb0061c5a8f4dce624dca258fbedc53a787b00310b1551810de6f1",
+      "protected": true
+    },
+    {
+      "path": "repos/horizon-starknet/skills/horizon-frontend-starknet/SKILL.md",
+      "sha256": "5c7f439a6db5981d30978b31557658b022032b611232f229fb0c5f073f7a0852",
+      "protected": true
+    },
+    {
+      "path": "repos/horizon-starknet/skills/horizon-indexer-events/SKILL.md",
+      "sha256": "4696e5d998e78fd6b436a8165c205a246fc7ed85557d89320225a6bda1e5650b",
+      "protected": true
+    },
+    {
+      "path": "repos/horizon-starknet/skills/horizon-quality-gates/SKILL.md",
+      "sha256": "d296dd88d1f2be20e4b8e8df3a0db4c8062cfcc986ea62335a350566093a536d",
+      "protected": true
+    },
+    {
+      "path": "repos/horizon-starknet/unknowns.yml",
+      "sha256": "d595df7beb457f6cc199084334fecab9075ad8bc96daf59422e5566d50c66dba",
+      "protected": true
+    }
+  ],
+  "verified": false,
+  "warnings": [
+    {
+      "code": "approved-unverified",
+      "message": "Pack is human-approved but eval replay has not verified it."
+    }
+  ]
+}

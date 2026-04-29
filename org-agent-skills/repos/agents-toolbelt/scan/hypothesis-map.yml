@@ -1,0 +1,75 @@
+{
+  "repo_id": "agents-toolbelt",
+  "seed_context": {
+    "purpose": {
+      "value": null,
+      "source": "manual repo registration"
+    },
+    "owner": {
+      "value": "ametel01",
+      "source": "manual repo registration"
+    }
+  },
+  "evidence_categories": {
+    "ci_config": [
+      ".github/workflows/ci.yml",
+      ".github/workflows/release.yml"
+    ],
+    "readme": [
+      "README.md"
+    ],
+    "script": [
+      "scripts/install.sh"
+    ]
+  },
+  "hypotheses": [
+    {
+      "name": "project_type",
+      "value": "documented_repository",
+      "evidence_paths": [
+        "README.md"
+      ],
+      "unknown": false
+    },
+    {
+      "name": "package_manager",
+      "value": "unknown",
+      "evidence_paths": [],
+      "unknown": true
+    },
+    {
+      "name": "test_command_candidates",
+      "value": [],
+      "evidence_paths": [],
+      "unknown": true
+    },
+    {
+      "name": "ci_validation",
+      "value": "ci configuration present",
+      "evidence_paths": [
+        ".github/workflows/ci.yml",
+        ".github/workflows/release.yml"
+      ],
+      "unknown": false
+    },
+    {
+      "name": "agent_documentation",
+      "value": "unknown",
+      "evidence_paths": [],
+      "unknown": true
+    },
+    {
+      "name": "scripts",
+      "value": [
+        "scripts/install.sh"
+      ],
+      "evidence_paths": [
+        "scripts/install.sh"
+      ],
+      "unknown": false
+    }
+  ],
+  "unknown_refs": [
+    "unk_001"
+  ]
+}

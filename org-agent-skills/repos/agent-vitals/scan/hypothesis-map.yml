@@ -1,0 +1,89 @@
+{
+  "repo_id": "agent-vitals",
+  "seed_context": {
+    "purpose": {
+      "value": null,
+      "source": "manual repo registration"
+    },
+    "owner": {
+      "value": "ametel01",
+      "source": "manual repo registration"
+    }
+  },
+  "evidence_categories": {
+    "agent_docs": [
+      "AGENTS.md"
+    ],
+    "readme": [
+      "README.md"
+    ],
+    "package_manifest": [
+      "package.json"
+    ],
+    "script": [
+      "scripts/auto-scan.sh",
+      "scripts/install.sh",
+      "scripts/uninstall.sh"
+    ],
+    "important_config": [
+      "tsconfig.json"
+    ]
+  },
+  "hypotheses": [
+    {
+      "name": "project_type",
+      "value": "application_or_package",
+      "evidence_paths": [
+        "package.json"
+      ],
+      "unknown": false
+    },
+    {
+      "name": "package_manager",
+      "value": "node",
+      "evidence_paths": [],
+      "unknown": true
+    },
+    {
+      "name": "test_command_candidates",
+      "value": [
+        "npm test"
+      ],
+      "evidence_paths": [
+        "package.json"
+      ],
+      "unknown": false
+    },
+    {
+      "name": "ci_validation",
+      "value": "unknown",
+      "evidence_paths": [],
+      "unknown": true
+    },
+    {
+      "name": "agent_documentation",
+      "value": "agent documentation present",
+      "evidence_paths": [
+        "AGENTS.md"
+      ],
+      "unknown": false
+    },
+    {
+      "name": "scripts",
+      "value": [
+        "scripts/auto-scan.sh",
+        "scripts/install.sh",
+        "scripts/uninstall.sh"
+      ],
+      "evidence_paths": [
+        "scripts/auto-scan.sh",
+        "scripts/install.sh",
+        "scripts/uninstall.sh"
+      ],
+      "unknown": false
+    }
+  ],
+  "unknown_refs": [
+    "unk_001"
+  ]
+}

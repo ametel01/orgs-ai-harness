@@ -1,0 +1,88 @@
+{
+  "resolvers": [
+    {
+      "intent": "use atb-catalog-package-lifecycle",
+      "skill": "atb-catalog-package-lifecycle",
+      "when": [
+        "use",
+        "this",
+        "skill",
+        "when",
+        "adding",
+        "or",
+        "changing",
+        "agents-toolbelt"
+      ]
+    },
+    {
+      "intent": "use atb-cli-runtime-tui",
+      "skill": "atb-cli-runtime-tui",
+      "when": [
+        "use",
+        "this",
+        "skill",
+        "when",
+        "changing",
+        "agents-toolbelt",
+        "cobra",
+        "commands"
+      ]
+    },
+    {
+      "intent": "use atb-cli-tools-skill-generation",
+      "skill": "atb-cli-tools-skill-generation",
+      "when": [
+        "use",
+        "this",
+        "skill",
+        "when",
+        "changing",
+        "agents-toolbelt",
+        "generation",
+        "of"
+      ]
+    },
+    {
+      "intent": "use atb-go-quality-gates",
+      "skill": "atb-go-quality-gates",
+      "when": [
+        "use",
+        "this",
+        "skill",
+        "when",
+        "changing",
+        "go",
+        "code",
+        "tests"
+      ]
+    },
+    {
+      "intent": "use atb-release-installer-security",
+      "skill": "atb-release-installer-security",
+      "when": [
+        "use",
+        "this",
+        "skill",
+        "when",
+        "changing",
+        "agents-toolbelt",
+        "release",
+        "packaging"
+      ]
+    },
+    {
+      "intent": "use atb-state-plan-ownership",
+      "skill": "atb-state-plan-ownership",
+      "when": [
+        "use",
+        "this",
+        "skill",
+        "when",
+        "changing",
+        "agents-toolbelt",
+        "state",
+        "reconciliation"
+      ]
+    }
+  ]
+}

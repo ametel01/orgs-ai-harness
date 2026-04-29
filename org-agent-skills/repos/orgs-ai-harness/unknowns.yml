@@ -1,0 +1,55 @@
+{
+  "unknowns": [
+    {
+      "id": "unk_001",
+      "question": "Which command is the narrowest reliable unit test command?",
+      "why_it_matters": "Eval and skill generation need reproducible validation commands.",
+      "severity": "blocking",
+      "status": "open",
+      "evidence": [
+        {
+          "path": "README.md",
+          "note": "Repository evidence found, but test command is unknown."
+        }
+      ],
+      "recommended_investigation": "Inspect package scripts and CI job command usage."
+    }
+  ],
+  "candidate_org_skills": [
+    {
+      "name": "approval-eval-cache-lifecycle",
+      "status": "candidate",
+      "reason": "Inferred only from orgs-ai-harness; requires cross-repo review before org-wide acceptance."
+    },
+    {
+      "name": "github-repo-discovery",
+      "status": "candidate",
+      "reason": "Inferred only from orgs-ai-harness; requires cross-repo review before org-wide acceptance."
+    },
+    {
+      "name": "harness-cli-workflows",
+      "status": "candidate",
+      "reason": "Inferred only from orgs-ai-harness; requires cross-repo review before org-wide acceptance."
+    },
+    {
+      "name": "harness-config-registry",
+      "status": "candidate",
+      "reason": "Inferred only from orgs-ai-harness; requires cross-repo review before org-wide acceptance."
+    },
+    {
+      "name": "harness-validation-tests",
+      "status": "candidate",
+      "reason": "Inferred only from orgs-ai-harness; requires cross-repo review before org-wide acceptance."
+    },
+    {
+      "name": "proposal-refresh-workflow",
+      "status": "candidate",
+      "reason": "Inferred only from orgs-ai-harness; requires cross-repo review before org-wide acceptance."
+    },
+    {
+      "name": "repo-onboarding-generation",
+      "status": "candidate",
+      "reason": "Inferred only from orgs-ai-harness; requires cross-repo review before org-wide acceptance."
+    }
+  ]
+}

@@ -1,0 +1,196 @@
+{
+  "schema_version": 1,
+  "repo_id": "agent-vitals",
+  "status": "approved-unverified",
+  "decision": "approved",
+  "pack_ref": "repos/agent-vitals/approval.yml",
+  "actor": "user",
+  "timestamp": "2026-04-29T01:34:37Z",
+  "rationale": "Reviewed through interactive setup",
+  "approved_artifacts": [
+    "repos/agent-vitals/evals/onboarding.yml",
+    "repos/agent-vitals/llm-output/claude/skills/agent-vitals-cli-reports/SKILL.md",
+    "repos/agent-vitals/llm-output/claude/skills/agent-vitals-dashboard-docs/SKILL.md",
+    "repos/agent-vitals/llm-output/claude/skills/agent-vitals-metrics-regressions/SKILL.md",
+    "repos/agent-vitals/llm-output/claude/skills/agent-vitals-packaging-installs/SKILL.md",
+    "repos/agent-vitals/llm-output/claude/skills/agent-vitals-prescriptions/SKILL.md",
+    "repos/agent-vitals/llm-output/claude/skills/agent-vitals-session-ingestion/SKILL.md",
+    "repos/agent-vitals/llm-output/codex/skills/agent-vitals-cli-reports/SKILL.md",
+    "repos/agent-vitals/llm-output/codex/skills/agent-vitals-dashboard-docs/SKILL.md",
+    "repos/agent-vitals/llm-output/codex/skills/agent-vitals-metrics-regressions/SKILL.md",
+    "repos/agent-vitals/llm-output/codex/skills/agent-vitals-packaging-installs/SKILL.md",
+    "repos/agent-vitals/llm-output/codex/skills/agent-vitals-prescriptions/SKILL.md",
+    "repos/agent-vitals/llm-output/codex/skills/agent-vitals-session-ingestion/SKILL.md",
+    "repos/agent-vitals/llm-skill-generation-prompt.md",
+    "repos/agent-vitals/llm-skill-generation.log",
+    "repos/agent-vitals/onboarding-summary.md",
+    "repos/agent-vitals/pack-report.md",
+    "repos/agent-vitals/resolvers.yml",
+    "repos/agent-vitals/scan/hypothesis-map.yml",
+    "repos/agent-vitals/scan/scan-manifest.yml",
+    "repos/agent-vitals/scripts/check-pack-shape.py",
+    "repos/agent-vitals/scripts/manifest.yml",
+    "repos/agent-vitals/skills/agent-vitals-cli-reports/SKILL.md",
+    "repos/agent-vitals/skills/agent-vitals-dashboard-docs/SKILL.md",
+    "repos/agent-vitals/skills/agent-vitals-metrics-regressions/SKILL.md",
+    "repos/agent-vitals/skills/agent-vitals-packaging-installs/SKILL.md",
+    "repos/agent-vitals/skills/agent-vitals-prescriptions/SKILL.md",
+    "repos/agent-vitals/skills/agent-vitals-session-ingestion/SKILL.md",
+    "repos/agent-vitals/unknowns.yml"
+  ],
+  "excluded_artifacts": [],
+  "protected_artifacts": [
+    {
+      "path": "repos/agent-vitals/evals/onboarding.yml",
+      "sha256": "6e8ea5cb60efe651cda41a86dbf49df106552c00394413480784eeb8824af8f2",
+      "protected": true
+    },
+    {
+      "path": "repos/agent-vitals/llm-output/claude/skills/agent-vitals-cli-reports/SKILL.md",
+      "sha256": "0b97da381ae2326ccf170dec981dfa990e8c0825bfe4a43ac24e26494b6b23f5",
+      "protected": true
+    },
+    {
+      "path": "repos/agent-vitals/llm-output/claude/skills/agent-vitals-dashboard-docs/SKILL.md",
+      "sha256": "8ab7c498b1cc505c4b9cbe1f2557bdc17b024f5e0cf473474cb172c9f4663e6b",
+      "protected": true
+    },
+    {
+      "path": "repos/agent-vitals/llm-output/claude/skills/agent-vitals-metrics-regressions/SKILL.md",
+      "sha256": "e6247e5a1b52b4c47ac106f983665eba4eb1e05d01274fc926fb0d92f1411bb6",
+      "protected": true
+    },
+    {
+      "path": "repos/agent-vitals/llm-output/claude/skills/agent-vitals-packaging-installs/SKILL.md",
+      "sha256": "bfc3a0ced5bf1204ea6503534e9e6f1cf399eb18cee98ad70de864a632914661",
+      "protected": true
+    },
+    {
+      "path": "repos/agent-vitals/llm-output/claude/skills/agent-vitals-prescriptions/SKILL.md",
+      "sha256": "34cda6e26a608fcbf28d6b9ed0d23bd671c344581eff76a4970869bd66704f01",
+      "protected": true
+    },
+    {
+      "path": "repos/agent-vitals/llm-output/claude/skills/agent-vitals-session-ingestion/SKILL.md",
+      "sha256": "9820cecf2d6d9ff11a1eec49138458c5d4bd99e4417f18a7d3564cafaf7836b1",
+      "protected": true
+    },
+    {
+      "path": "repos/agent-vitals/llm-output/codex/skills/agent-vitals-cli-reports/SKILL.md",
+      "sha256": "0b97da381ae2326ccf170dec981dfa990e8c0825bfe4a43ac24e26494b6b23f5",
+      "protected": true
+    },
+    {
+      "path": "repos/agent-vitals/llm-output/codex/skills/agent-vitals-dashboard-docs/SKILL.md",
+      "sha256": "8ab7c498b1cc505c4b9cbe1f2557bdc17b024f5e0cf473474cb172c9f4663e6b",
+      "protected": true
+    },
+    {
+      "path": "repos/agent-vitals/llm-output/codex/skills/agent-vitals-metrics-regressions/SKILL.md",
+      "sha256": "e6247e5a1b52b4c47ac106f983665eba4eb1e05d01274fc926fb0d92f1411bb6",
+      "protected": true
+    },
+    {
+      "path": "repos/agent-vitals/llm-output/codex/skills/agent-vitals-packaging-installs/SKILL.md",
+      "sha256": "bfc3a0ced5bf1204ea6503534e9e6f1cf399eb18cee98ad70de864a632914661",
+      "protected": true
+    },
+    {
+      "path": "repos/agent-vitals/llm-output/codex/skills/agent-vitals-prescriptions/SKILL.md",
+      "sha256": "34cda6e26a608fcbf28d6b9ed0d23bd671c344581eff76a4970869bd66704f01",
+      "protected": true
+    },
+    {
+      "path": "repos/agent-vitals/llm-output/codex/skills/agent-vitals-session-ingestion/SKILL.md",
+      "sha256": "9820cecf2d6d9ff11a1eec49138458c5d4bd99e4417f18a7d3564cafaf7836b1",
+      "protected": true
+    },
+    {
+      "path": "repos/agent-vitals/llm-skill-generation-prompt.md",
+      "sha256": "550089736587b330f6e1462ad1983aeff6691fb7b9f86c80660f80667643937c",
+      "protected": true
+    },
+    {
+      "path": "repos/agent-vitals/llm-skill-generation.log",
+      "sha256": "fb2047c5b06fcab621ee5cde7ae6cd85137e4d594105e479ab59ed8e20dd6ccd",
+      "protected": true
+    },
+    {
+      "path": "repos/agent-vitals/onboarding-summary.md",
+      "sha256": "a825cec0f229dc0a1e02f17c8345473eebca8c97121e51dc22ccbcde269ab8aa",
+      "protected": true
+    },
+    {
+      "path": "repos/agent-vitals/pack-report.md",
+      "sha256": "d956d42b2394444648f02239ade62f858972e4c96a6c378a73cde2b8156175e2",
+      "protected": true
+    },
+    {
+      "path": "repos/agent-vitals/resolvers.yml",
+      "sha256": "7c7cc8e0eecc29649c3d3a35ca82108c6f58920a2b15131b3b022206a6b4ff2f",
+      "protected": true
+    },
+    {
+      "path": "repos/agent-vitals/scan/hypothesis-map.yml",
+      "sha256": "86e6120a1da0b8cac47525f6bd4db1fcf650a942c51a6b08f7417cad8bcd4e95",
+      "protected": true
+    },
+    {
+      "path": "repos/agent-vitals/scan/scan-manifest.yml",
+      "sha256": "c3610445edf479a4ad2e6098f7ae1907c55e6c6a84723101889df6975f4d231e",
+      "protected": true
+    },
+    {
+      "path": "repos/agent-vitals/scripts/check-pack-shape.py",
+      "sha256": "a1b898093f9d3ac813a44abac51ad9d59d157820f68d3257357b5c56b9942223",
+      "protected": true
+    },
+    {
+      "path": "repos/agent-vitals/scripts/manifest.yml",
+      "sha256": "390bf326fdd9c610512443feece67ca2d7eabc494fd9805f8b284a7db77eb9b9",
+      "protected": true
+    },
+    {
+      "path": "repos/agent-vitals/skills/agent-vitals-cli-reports/SKILL.md",
+      "sha256": "0b97da381ae2326ccf170dec981dfa990e8c0825bfe4a43ac24e26494b6b23f5",
+      "protected": true
+    },
+    {
+      "path": "repos/agent-vitals/skills/agent-vitals-dashboard-docs/SKILL.md",
+      "sha256": "8ab7c498b1cc505c4b9cbe1f2557bdc17b024f5e0cf473474cb172c9f4663e6b",
+      "protected": true
+    },
+    {
+      "path": "repos/agent-vitals/skills/agent-vitals-metrics-regressions/SKILL.md",
+      "sha256": "e6247e5a1b52b4c47ac106f983665eba4eb1e05d01274fc926fb0d92f1411bb6",
+      "protected": true
+    },
+    {
+      "path": "repos/agent-vitals/skills/agent-vitals-packaging-installs/SKILL.md",
+      "sha256": "bfc3a0ced5bf1204ea6503534e9e6f1cf399eb18cee98ad70de864a632914661",
+      "protected": true
+    },
+    {
+      "path": "repos/agent-vitals/skills/agent-vitals-prescriptions/SKILL.md",
+      "sha256": "34cda6e26a608fcbf28d6b9ed0d23bd671c344581eff76a4970869bd66704f01",
+      "protected": true
+    },
+    {
+      "path": "repos/agent-vitals/skills/agent-vitals-session-ingestion/SKILL.md",
+      "sha256": "9820cecf2d6d9ff11a1eec49138458c5d4bd99e4417f18a7d3564cafaf7836b1",
+      "protected": true
+    },
+    {
+      "path": "repos/agent-vitals/unknowns.yml",
+      "sha256": "cb1185d88a1cae61fc36f1756596f15d8445cf7e91a286208173bf611ea35f09",
+      "protected": true
+    }
+  ],
+  "verified": false,
+  "warnings": [
+    {
+      "code": "approved-unverified",
+      "message": "Pack is human-approved but eval replay has not verified it."
+    }
+  ]
+}

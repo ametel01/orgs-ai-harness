@@ -1,0 +1,83 @@
+{
+  "repo_id": "vitals-db",
+  "seed_context": {
+    "purpose": {
+      "value": null,
+      "source": "manual repo registration"
+    },
+    "owner": {
+      "value": "ametel01",
+      "source": "manual repo registration"
+    }
+  },
+  "evidence_categories": {
+    "ci_config": [
+      ".github/workflows/ci.yml"
+    ],
+    "readme": [
+      "README.md"
+    ],
+    "package_manifest": [
+      "package.json"
+    ],
+    "script": [
+      "scripts/gen-fixture.ts"
+    ],
+    "important_config": [
+      "tsconfig.json"
+    ]
+  },
+  "hypotheses": [
+    {
+      "name": "project_type",
+      "value": "application_or_package",
+      "evidence_paths": [
+        "package.json"
+      ],
+      "unknown": false
+    },
+    {
+      "name": "package_manager",
+      "value": "node",
+      "evidence_paths": [],
+      "unknown": true
+    },
+    {
+      "name": "test_command_candidates",
+      "value": [
+        "npm test"
+      ],
+      "evidence_paths": [
+        "package.json"
+      ],
+      "unknown": false
+    },
+    {
+      "name": "ci_validation",
+      "value": "ci configuration present",
+      "evidence_paths": [
+        ".github/workflows/ci.yml"
+      ],
+      "unknown": false
+    },
+    {
+      "name": "agent_documentation",
+      "value": "unknown",
+      "evidence_paths": [],
+      "unknown": true
+    },
+    {
+      "name": "scripts",
+      "value": [
+        "scripts/gen-fixture.ts"
+      ],
+      "evidence_paths": [
+        "scripts/gen-fixture.ts"
+      ],
+      "unknown": false
+    }
+  ],
+  "unknown_refs": [
+    "unk_001"
+  ]
+}

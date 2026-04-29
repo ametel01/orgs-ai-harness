@@ -1,0 +1,102 @@
+{
+  "resolvers": [
+    {
+      "intent": "use analytics-query-dto-contracts",
+      "skill": "analytics-query-dto-contracts",
+      "when": [
+        "use",
+        "this",
+        "skill",
+        "when",
+        "adding",
+        "or",
+        "changing",
+        "vitals-db"
+      ]
+    },
+    {
+      "intent": "use apple-health-ingest-pipeline",
+      "skill": "apple-health-ingest-pipeline",
+      "when": [
+        "use",
+        "this",
+        "skill",
+        "when",
+        "modifying",
+        "vitals-db",
+        "apple",
+        "health"
+      ]
+    },
+    {
+      "intent": "use composite-performance-analytics",
+      "skill": "composite-performance-analytics",
+      "when": [
+        "use",
+        "this",
+        "skill",
+        "when",
+        "changing",
+        "vitals-db",
+        "composite",
+        "analytics"
+      ]
+    },
+    {
+      "intent": "use duckdb-schema-migrations",
+      "skill": "duckdb-schema-migrations",
+      "when": [
+        "use",
+        "this",
+        "skill",
+        "when",
+        "changing",
+        "vitals-db",
+        "duckdb",
+        "schema"
+      ]
+    },
+    {
+      "intent": "use hono-api-routes",
+      "skill": "hono-api-routes",
+      "when": [
+        "use",
+        "this",
+        "skill",
+        "when",
+        "adding",
+        "or",
+        "changing",
+        "vitals-db"
+      ]
+    },
+    {
+      "intent": "use next-dashboard-pages",
+      "skill": "next-dashboard-pages",
+      "when": [
+        "use",
+        "this",
+        "skill",
+        "when",
+        "modifying",
+        "the",
+        "vitals-db",
+        "next"
+      ]
+    },
+    {
+      "intent": "use vitals-bun-workspace-gates",
+      "skill": "vitals-bun-workspace-gates",
+      "when": [
+        "use",
+        "this",
+        "skill",
+        "when",
+        "setting",
+        "up",
+        "validating",
+        "linting"
+      ]
+    }
+  ]
+}

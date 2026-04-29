@@ -1,0 +1,43 @@
+{
+  "repo_id": "agent-vitals",
+  "repo_path": "../../agent-vitals",
+  "repo_source_commit": "47092e220a71c8c6e59ea39bf6cac1dedd0e2602",
+  "scanned_paths": [
+    {
+      "path": "AGENTS.md",
+      "category": "agent_docs",
+      "bytes": 375
+    },
+    {
+      "path": "README.md",
+      "category": "readme",
+      "bytes": 19028
+    },
+    {
+      "path": "package.json",
+      "category": "package_manifest",
+      "bytes": 1199
+    },
+    {
+      "path": "scripts/auto-scan.sh",
+      "category": "script",
+      "bytes": 417
+    },
+    {
+      "path": "scripts/install.sh",
+      "category": "script",
+      "bytes": 2719
+    },
+    {
+      "path": "scripts/uninstall.sh",
+      "category": "script",
+      "bytes": 383
+    },
+    {
+      "path": "tsconfig.json",
+      "category": "important_config",
+      "bytes": 441
+    }
+  ],
+  "skipped_paths": []
+}
