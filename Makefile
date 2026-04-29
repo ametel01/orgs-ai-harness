@@ -22,7 +22,8 @@ coverage:
 verify: lint typecheck test
 
 security:
-	@echo "security gate is not configured yet; see issue #70"
+	uv run pip-audit
+	uv run detect-secrets scan --baseline .secrets.baseline
 
 build:
 	uv build
