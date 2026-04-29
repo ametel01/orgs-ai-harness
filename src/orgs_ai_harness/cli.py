@@ -31,6 +31,11 @@ from orgs_ai_harness.proposals import (
     reject_proposal,
     render_proposal_show,
 )
+from orgs_ai_harness.release_artifacts import (
+    ReleaseArtifactError,
+    resolve_release_changed_files,
+    write_release_readiness_artifacts,
+)
 from orgs_ai_harness.release_readiness import ReleaseReadinessError, collect_release_readiness_input
 from orgs_ai_harness.repo_discovery import (
     DiscoveredRepo,
@@ -216,6 +221,16 @@ def build_parser() -> argparse.ArgumentParser:
     release_readiness.add_argument("--version", help="Optional release version identifier")
     release_readiness.add_argument("--base", help="Optional base git ref for the release range")
     release_readiness.add_argument("--head", help="Optional head git ref for the release range")
+    release_readiness.add_argument(
+        "--files",
+        nargs="+",
+        help="Explicit repo-relative changed files for deterministic non-interactive release review",
+    )
+    release_readiness.add_argument("--files-from", help="Path to a newline-delimited changed-file list")
+    release_readiness.add_argument("--json-path", help="Write the stable release readiness JSON artifact to this path")
+    release_readiness.add_argument(
+        "--markdown-path", help="Write the human-readable release readiness Markdown artifact to this path"
+    )
 
     cache_parser = subparsers.add_parser("cache", help="Manage repo-local pinned caches")
     cache_subparsers = cache_parser.add_subparsers(dest="cache_command", required=True)
@@ -277,6 +292,7 @@ def main(argv: list[str] | None = None) -> int:
         ExplainError,
         ProposalError,
         ReviewError,
+        ReleaseArtifactError,
         ReleaseReadinessError,
         RuntimeEventError,
         RuntimeToolError,
@@ -581,11 +597,29 @@ def _handle_release_command(args: argparse.Namespace) -> int:
         base=args.base,
         head=args.head,
     )
+    changed_files = resolve_release_changed_files(
+        readiness,
+        files=tuple(args.files or ()),
+        files_from=Path(args.files_from) if args.files_from else None,
+    )
     print(
         f"Release readiness for repo {readiness.repo_id}; status={readiness.status}; "
-        f"version={readiness.version or '-'}; base={readiness.base or '-'}; head={readiness.head or '-'}"
+        f"version={readiness.version or '-'}; base={readiness.base or '-'}; head={readiness.head or '-'}; "
+        f"changed_files={len(changed_files)}"
     )
     print(f"Repo path: {readiness.repo_path}")
+    if args.json_path or args.markdown_path:
+        written = write_release_readiness_artifacts(
+            root,
+            readiness,
+            changed_files=changed_files,
+            json_path=Path(args.json_path) if args.json_path else None,
+            markdown_path=Path(args.markdown_path) if args.markdown_path else None,
+        )
+        if written.json_path is not None:
+            print(f"JSON artifact: {written.json_path}")
+        if written.markdown_path is not None:
+            print(f"Markdown artifact: {written.markdown_path}")
     return 0
 
 
