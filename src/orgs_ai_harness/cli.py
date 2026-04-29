@@ -31,6 +31,7 @@ from orgs_ai_harness.proposals import (
     reject_proposal,
     render_proposal_show,
 )
+from orgs_ai_harness.release_readiness import ReleaseReadinessError, collect_release_readiness_input
 from orgs_ai_harness.repo_discovery import (
     DiscoveredRepo,
     RepoDiscoveryError,
@@ -208,6 +209,14 @@ def build_parser() -> argparse.ArgumentParser:
         "--markdown-path", help="Write the human-readable PR review Markdown artifact to this path"
     )
 
+    release_parser = subparsers.add_parser("release", help="Create artifact-only release readiness inputs")
+    release_subparsers = release_parser.add_subparsers(dest="release_command", required=True)
+    release_readiness = release_subparsers.add_parser("readiness", help="Resolve release readiness for one repo")
+    release_readiness.add_argument("--repo-id", required=True, help="Registered repo id to inspect")
+    release_readiness.add_argument("--version", help="Optional release version identifier")
+    release_readiness.add_argument("--base", help="Optional base git ref for the release range")
+    release_readiness.add_argument("--head", help="Optional head git ref for the release range")
+
     cache_parser = subparsers.add_parser("cache", help="Manage repo-local pinned caches")
     cache_subparsers = cache_parser.add_subparsers(dest="cache_command", required=True)
     cache_refresh = cache_subparsers.add_parser("refresh", help="Refresh a repo-local approved pack cache")
@@ -268,6 +277,7 @@ def main(argv: list[str] | None = None) -> int:
         ExplainError,
         ProposalError,
         ReviewError,
+        ReleaseReadinessError,
         RuntimeEventError,
         RuntimeToolError,
     ) as exc:
@@ -292,6 +302,7 @@ def _handler_for_command(command: str):
         "refresh": _handle_refresh_command,
         "proposals": _handle_proposals_command,
         "review": _handle_review_command,
+        "release": _handle_release_command,
         "repo": _handle_repo_command,
     }
     return handlers.get(command)
@@ -556,6 +567,25 @@ def _handle_review_command(args: argparse.Namespace) -> int:
             print(f"JSON artifact: {written.json_path}")
         if written.markdown_path is not None:
             print(f"Markdown artifact: {written.markdown_path}")
+    return 0
+
+
+def _handle_release_command(args: argparse.Namespace) -> int:
+    if args.release_command != "readiness":
+        return 2
+    root = _resolve_existing_org_pack_root(Path.cwd())
+    readiness = collect_release_readiness_input(
+        root,
+        args.repo_id,
+        version=args.version,
+        base=args.base,
+        head=args.head,
+    )
+    print(
+        f"Release readiness for repo {readiness.repo_id}; status={readiness.status}; "
+        f"version={readiness.version or '-'}; base={readiness.base or '-'}; head={readiness.head or '-'}"
+    )
+    print(f"Repo path: {readiness.repo_path}")
     return 0
 
 
