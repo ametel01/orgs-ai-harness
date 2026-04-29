@@ -4,6 +4,13 @@ version = "0.1.0"
 description = "CLI-first harness for generating and validating org agent skill packs."
 requires-python = ">=3.11"
 
+[dependency-groups]
+dev = [
+    "pyright>=1.1.400",
+    "pytest>=8.3.5",
+    "ruff>=0.11.7",
+]
+
 [project.scripts]
 harness = "orgs_ai_harness.cli:main"
 
@@ -11,3 +18,27 @@ harness = "orgs_ai_harness.cli:main"
 requires = ["setuptools>=69"]
 build-backend = "setuptools.build_meta"
 
+[tool.ruff]
+line-length = 120
+src = ["src", "tests"]
+extend-exclude = [
+    ".agent-harness",
+    "local-docs",
+    "org-agent-skills",
+]
+
+[tool.ruff.lint]
+select = ["E", "F", "I", "B", "UP", "RUF"]
+
+[tool.pyright]
+include = ["src", "tests"]
+exclude = [
+    ".agent-harness",
+    "local-docs",
+    "org-agent-skills",
+]
+pythonVersion = "3.11"
+typeCheckingMode = "basic"
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]

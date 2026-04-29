@@ -2,10 +2,8 @@
 
 from __future__ import annotations
 
-from dataclasses import dataclass
 import json
 import os
-from pathlib import Path
 import queue
 import re
 import shutil
@@ -13,6 +11,8 @@ import subprocess
 import sys
 import threading
 import time
+from dataclasses import dataclass
+from pathlib import Path
 
 from orgs_ai_harness.repo_registry import RepoEntry, load_repo_entries, update_repo_coverage_status
 
@@ -135,7 +135,7 @@ def onboard_repo(
     target = skill_target.strip().lower()
     if generator == "template":
         for spec in skill_specs:
-            skill_root = skills_root / spec["name"]
+            skill_root = skills_root / str(spec["name"])
             references_root = skill_root / "references"
             references_root.mkdir(parents=True, exist_ok=True)
             (skill_root / "SKILL.md").write_text(_render_skill(spec), encoding="utf-8")
@@ -244,10 +244,15 @@ def _find_repo(root: Path, repo_id: str) -> RepoEntry:
     for entry in load_repo_entries(root / "harness.yml"):
         if entry.id == normalized_repo_id:
             if entry.coverage_status == "external" or entry.external:
-                raise RepoOnboardingError(f"repo is an external dependency reference, not selected coverage: {normalized_repo_id}")
+                raise RepoOnboardingError(
+                    f"repo is an external dependency reference, not selected coverage: {normalized_repo_id}"
+                )
             if entry.coverage_status == "approved-unverified":
                 _raise_if_generation_would_overwrite_protected(root, entry)
-            if entry.coverage_status not in {"selected", "onboarding", "needs-investigation", "draft"} or not entry.active:
+            if (
+                entry.coverage_status not in {"selected", "onboarding", "needs-investigation", "draft"}
+                or not entry.active
+            ):
                 raise RepoOnboardingError(f"repo is not active selected coverage: {normalized_repo_id}")
             if entry.local_path is None:
                 raise RepoOnboardingError(
@@ -427,7 +432,8 @@ def _skill_specs_for(entry: RepoEntry, hypothesis_map: dict[str, object]) -> lis
 
 def _render_skill(spec: dict[str, object]) -> str:
     name = str(spec["name"])
-    triggers = ", ".join(str(trigger) for trigger in spec["triggers"])
+    spec_triggers = spec.get("triggers")
+    triggers = ", ".join(str(trigger) for trigger in spec_triggers) if isinstance(spec_triggers, list) else ""
     return (
         "---\n"
         f"name: {name}\n"
@@ -450,8 +456,8 @@ def _render_skill_reference(entry: RepoEntry, spec: dict[str, object], hypothesi
         f"# Repo Evidence for {spec['name']}",
         "",
         f"- Repo: {entry.id}",
-        f"- Source: generated draft from read-only scan evidence",
-        f"- Status: candidate, not accepted org-wide",
+        "- Source: generated draft from read-only scan evidence",
+        "- Status: candidate, not accepted org-wide",
         "",
         "## Evidence Categories",
         "",
@@ -587,7 +593,8 @@ After validation, the harness will install the validated generated skills into t
 You may read the source repository here:
 {repo_path}
 
-You may write only to the listed generation staging targets and to this harness artifact directory for prompt/report files:
+You may write only to the listed generation staging targets and to this harness
+artifact directory for prompt/report files:
 {artifact_root}
 
 Repository:
@@ -607,9 +614,11 @@ Available scan artifacts:
 
 Additional skill-shaping constraints:
 - Prefer many small, specialized skills over a few broad general skills.
-- Each skill must have highly specific `name` and `description` metadata so agents can select it without loading excess context.
+- Each skill must have highly specific `name` and `description` metadata so
+  agents can select it without loading excess context.
 - Descriptions must be trigger-focused and concrete, not marketing summaries.
-- Avoid broad catch-all skills such as `repo-architecture` unless the repository truly has a narrow architecture workflow that needs it.
+- Avoid broad catch-all skills such as `repo-architecture` unless the repository
+  truly has a narrow architecture workflow that needs it.
 - Create the smallest useful skill set for this repo, normally 3-8 targeted skills.
 - If multiple generation staging targets are listed, write the same generated skill set to each target.
 """
@@ -622,13 +631,13 @@ def _ensure_llm_skill_outputs(
     log_path: Path,
 ) -> list[dict[str, object]]:
     specs_by_root = [_discover_skill_specs(root) for root in target_roots]
-    missing_roots = [str(root) for root, specs in zip(target_roots, specs_by_root) if not specs]
+    missing_roots = [str(root) for root, specs in zip(target_roots, specs_by_root, strict=True) if not specs]
     first_specs = specs_by_root[0] if specs_by_root else []
     malformed = []
     if not first_specs:
         malformed.append("no skill directories generated")
     expected_names = {str(spec["name"]) for spec in first_specs}
-    for root, specs in zip(target_roots[1:], specs_by_root[1:]):
+    for root, specs in zip(target_roots[1:], specs_by_root[1:], strict=True):
         names = {str(spec["name"]) for spec in specs}
         if names != expected_names:
             malformed.append(f"{root} generated skill set differs from first target")
@@ -687,7 +696,10 @@ def _run_llm_command_with_progress(command: list[str], *, cwd: Path, log_path: P
                     last_progress = time.monotonic()
         returncode = process.wait()
         reader.join(timeout=1)
-    print(f"{label}: {'completed' if returncode == 0 else f'failed with exit {returncode}'}. Log: {log_path}", file=sys.stderr)
+    print(
+        f"{label}: {'completed' if returncode == 0 else f'failed with exit {returncode}'}. Log: {log_path}",
+        file=sys.stderr,
+    )
     return LlmCommandResult(returncode=returncode, tail="\n".join(tail_lines[-10:]))
 
 
@@ -751,7 +763,9 @@ def _snapshot_generated_repo_skills(source_skills_root: Path, artifact_root: Pat
 
 
 def _install_generated_skills(source_skills_root: Path, target_roots: tuple[Path, ...]) -> None:
-    skill_roots = [path for path in sorted(source_skills_root.iterdir()) if path.is_dir() and (path / "SKILL.md").is_file()]
+    skill_roots = [
+        path for path in sorted(source_skills_root.iterdir()) if path.is_dir() and (path / "SKILL.md").is_file()
+    ]
     for target_root in target_roots:
         target_root.mkdir(parents=True, exist_ok=True)
         for skill_root in skill_roots:
@@ -969,7 +983,7 @@ def _eval_task(
 def _render_check_script() -> str:
     return (
         "#!/usr/bin/env python3\n"
-        "\"\"\"Deterministic local check for generated draft pack shape.\"\"\"\n"
+        '"""Deterministic local check for generated draft pack shape."""\n'
         "from pathlib import Path\n"
         "import sys\n\n"
         "root = Path(sys.argv[1]) if len(sys.argv) > 1 else Path.cwd()\n"

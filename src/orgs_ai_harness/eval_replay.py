@@ -2,11 +2,11 @@
 
 from __future__ import annotations
 
+import json
+import subprocess
 from dataclasses import dataclass
 from datetime import UTC, datetime
-import json
 from pathlib import Path
-import subprocess
 from typing import Protocol
 
 from orgs_ai_harness.repo_registry import RepoEntry, load_repo_entries, update_repo_coverage_status
@@ -41,9 +41,11 @@ class EvalAdapter(Protocol):
 
     def read_repo(self, artifact_root: Path, task: dict[str, object]) -> dict[str, str]:
         """Read repo artifact evidence for an eval task."""
+        ...
 
     def use_skill_pack(self, artifact_root: Path, approval: dict[str, object]) -> None:
         """Make the approved skill pack available to later answers."""
+        ...
 
     def answer_eval_task(
         self,
@@ -53,6 +55,7 @@ class EvalAdapter(Protocol):
         with_skill_pack: bool,
     ) -> AdapterAnswer:
         """Answer one eval task using the available evidence."""
+        ...
 
 
 class DeterministicLocalAdapter:
@@ -182,9 +185,10 @@ def run_eval(
     skill_pack_pass_rate = _pass_rate(skill_pack)
     baseline_delta = round(skill_pack_pass_rate - baseline_pass_rate, 4)
     rediscovery_cost_delta = _cost_reduction(baseline_cost, skill_pack_cost)
+    skill_pack_tasks = skill_pack.get("tasks")
     safety_failures = [
         result["task_id"]
-        for result in skill_pack["tasks"]
+        for result in (skill_pack_tasks if isinstance(skill_pack_tasks, list) else [])
         if isinstance(result, dict) and result.get("forbidden_claims_score") == 0.0
     ]
     status = _decide_status(
@@ -300,7 +304,9 @@ def _find_eval_repo(root: Path, repo_id: str, *, development: bool) -> RepoEntry
         if not entry.active:
             raise EvalReplayError(f"repo is not active selected coverage: {normalized_repo_id}")
         if entry.external or entry.coverage_status == "external":
-            raise EvalReplayError(f"repo is an external dependency reference, not selected coverage: {normalized_repo_id}")
+            raise EvalReplayError(
+                f"repo is an external dependency reference, not selected coverage: {normalized_repo_id}"
+            )
         if entry.coverage_status == "draft" and not development:
             raise EvalReplayError(
                 f"repo {entry.id} is still draft; run 'harness approve {entry.id} --all' "

@@ -1,6 +1,5 @@
 from __future__ import annotations
 
-from dataclasses import replace
 import hashlib
 import io
 import json
@@ -9,6 +8,7 @@ import subprocess
 import sys
 import tempfile
 import unittest
+from dataclasses import replace
 from pathlib import Path
 
 from orgs_ai_harness.cache_manager import export_cached_pack, refresh_cache
@@ -23,6 +23,13 @@ from orgs_ai_harness.org_pack import (
     init_org_pack,
     resolve_default_root,
 )
+from orgs_ai_harness.repo_discovery import (
+    DiscoveredRepo,
+    _run_checkbox_selector,
+    infer_github_owner,
+    select_discovered_repos_interactively,
+)
+from orgs_ai_harness.repo_onboarding import is_sensitive_path
 from orgs_ai_harness.repo_registry import (
     RepoRegistryError,
     add_repo,
@@ -34,13 +41,6 @@ from orgs_ai_harness.repo_registry import (
     save_repo_entries,
     set_repo_path,
 )
-from orgs_ai_harness.repo_discovery import (
-    DiscoveredRepo,
-    _run_checkbox_selector,
-    infer_github_owner,
-    select_discovered_repos_interactively,
-)
-from orgs_ai_harness.repo_onboarding import is_sensitive_path
 from orgs_ai_harness.validation import validate_org_pack
 
 
@@ -192,9 +192,7 @@ class OrgPackFoundationTests(unittest.TestCase):
             root = init_org_pack(Path(tmp), "acme")
             (root / "org" / "resolvers.yml").unlink()
             (root / "harness.yml").write_text(
-                "org:\n"
-                "  name: bad/name\n"
-                "  skills_version: nope\n",
+                "org:\n  name: bad/name\n  skills_version: nope\n",
                 encoding="utf-8",
             )
 
@@ -361,9 +359,7 @@ class OrgPackFoundationTests(unittest.TestCase):
             root = init_org_pack(Path(tmp), "acme")
             (root / "org" / "resolvers.yml").unlink()
             (root / "harness.yml").write_text(
-                "org:\n"
-                "  name: bad/name\n"
-                "  skills_version: 2\n",
+                "org:\n  name: bad/name\n  skills_version: 2\n",
                 encoding="utf-8",
             )
 
@@ -2368,7 +2364,9 @@ class RepoOnboardingTests(unittest.TestCase):
             self.assertIn("Generated draft pack for repo fixture-repo", onboard_result.stdout)
             artifact_root = tmp_path / DEFAULT_PACK_DIR / "repos" / "fixture-repo"
             self.assertTrue((artifact_root / "skills" / "build-test-debug" / "SKILL.md").is_file())
-            self.assertTrue((artifact_root / "skills" / "repo-architecture" / "references" / "repo-evidence.md").is_file())
+            self.assertTrue(
+                (artifact_root / "skills" / "repo-architecture" / "references" / "repo-evidence.md").is_file()
+            )
             self.assertTrue((artifact_root / "resolvers.yml").is_file())
             self.assertTrue((artifact_root / "evals" / "onboarding.yml").is_file())
             self.assertTrue((artifact_root / "scripts" / "check-pack-shape.py").is_file())
@@ -2409,7 +2407,8 @@ class RepoOnboardingTests(unittest.TestCase):
                 "        (root / 'SKILL.md').write_text(\n"
                 "            '---\\n'\n"
                 "            f'name: {name}\\n'\n"
-                "            f'description: Full LLM-generated guidance for {name}. Use when working in this repo.\\n'\n"
+                "            f'description: Full LLM-generated guidance for {name}. '\n"
+                "            'Use when working in this repo.\\n'\n"
                 "            '---\\n\\n'\n"
                 "            f'# {name}\\n\\nUse repository evidence for this workflow.\\n',\n"
                 "            encoding='utf-8',\n"
@@ -2436,7 +2435,9 @@ class RepoOnboardingTests(unittest.TestCase):
                 "Full LLM-generated guidance",
                 (artifact_root / "skills" / "repo-test-workflow" / "SKILL.md").read_text(encoding="utf-8"),
             )
-            self.assertTrue((tmp_path / "fixture-repo" / ".agents" / "skills" / "repo-test-workflow" / "SKILL.md").is_file())
+            self.assertTrue(
+                (tmp_path / "fixture-repo" / ".agents" / "skills" / "repo-test-workflow" / "SKILL.md").is_file()
+            )
             validate_result = self.run_cli(tmp_path, "validate", "fixture-repo")
             self.assertEqual(validate_result.returncode, 0, validate_result.stderr)
 
@@ -2450,10 +2451,7 @@ class RepoOnboardingTests(unittest.TestCase):
             fake_bin.mkdir()
             codex_path = fake_bin / "codex"
             codex_path.write_text(
-                "#!/usr/bin/env python3\n"
-                "import sys\n"
-                "print('analyzing repository before failure')\n"
-                "sys.exit(7)\n",
+                "#!/usr/bin/env python3\nimport sys\nprint('analyzing repository before failure')\nsys.exit(7)\n",
                 encoding="utf-8",
             )
             codex_path.chmod(0o755)
@@ -2484,16 +2482,7 @@ class RepoOnboardingTests(unittest.TestCase):
             setup_result = self.run_cli_with_input(
                 tmp_path,
                 ("setup", "local", "--llm", "template"),
-                "acme\n"
-                "fixture-repo\n"
-                "\n"
-                "\n"
-                "\n"
-                "\n"
-                "1\n"
-                "n\n"
-                "n\n"
-                "n\n",
+                "acme\nfixture-repo\n\n\n\n\n1\nn\nn\nn\n",
             )
 
             self.assertEqual(setup_result.returncode, 0, setup_result.stderr)
@@ -2563,12 +2552,8 @@ class RepoOnboardingTests(unittest.TestCase):
             )
 
             self.assertEqual(setup_result.returncode, 0, setup_result.stderr)
-            self.assertTrue(
-                (fake_home / ".agents" / "skills" / "org-repository-routing" / "SKILL.md").is_file()
-            )
-            self.assertTrue(
-                (fake_home / ".claude" / "skills" / "org-repository-routing" / "SKILL.md").is_file()
-            )
+            self.assertTrue((fake_home / ".agents" / "skills" / "org-repository-routing" / "SKILL.md").is_file())
+            self.assertTrue((fake_home / ".claude" / "skills" / "org-repository-routing" / "SKILL.md").is_file())
             self.assertFalse((tmp_path / ".agents" / "skills" / "org-repository-routing" / "SKILL.md").exists())
             self.assertFalse((tmp_path / ".claude" / "skills" / "org-repository-routing" / "SKILL.md").exists())
             self.assertIn("Installed global org skills at", setup_result.stdout)
@@ -2655,7 +2640,9 @@ class RepoOnboardingTests(unittest.TestCase):
             metadata = json.loads((result.cache_root / "metadata.json").read_text(encoding="utf-8"))
             self.assertEqual(metadata["status"], "approved-unverified")
             self.assertEqual(metadata["source_pack_ref"], "repos/fixture-repo/approval.yml")
-            self.assertTrue((result.cache_root / "repos" / "fixture-repo" / "skills" / "build-test-debug" / "SKILL.md").is_file())
+            self.assertTrue(
+                (result.cache_root / "repos" / "fixture-repo" / "skills" / "build-test-debug" / "SKILL.md").is_file()
+            )
             self.assertTrue((result.cache_root / "org" / "resolvers.yml").is_file())
             self.assertEqual(protected_path.read_bytes(), protected_before)
 
@@ -2708,9 +2695,7 @@ class RepoOnboardingTests(unittest.TestCase):
             status = json.loads((result.export_root / "pack-status.json").read_text(encoding="utf-8"))
             self.assertEqual(status["target"], "generic")
             self.assertEqual(status["status"], "approved-unverified")
-            self.assertTrue(
-                any(warning["code"] == "approved-unverified" for warning in status["warnings"])
-            )
+            self.assertTrue(any(warning["code"] == "approved-unverified" for warning in status["warnings"]))
 
             cli_result = self.run_cli(tmp_path, "export", "generic", "fixture-repo")
 
@@ -2767,9 +2752,7 @@ class RepoOnboardingTests(unittest.TestCase):
             self.assertIn("Exported codex pack for fixture-repo", cli_result.stdout)
             export_root = (repo_path / ".agent-harness" / "cache" / "exports" / "codex").resolve()
             exported_paths = sorted(
-                path.relative_to(export_root).as_posix()
-                for path in export_root.rglob("*")
-                if path.is_file()
+                path.relative_to(export_root).as_posix() for path in export_root.rglob("*") if path.is_file()
             )
             self.assertIn("pack-status.json", exported_paths)
             self.assertIn("resolvers.yml", exported_paths)
@@ -2778,9 +2761,7 @@ class RepoOnboardingTests(unittest.TestCase):
             status = json.loads((export_root / "pack-status.json").read_text(encoding="utf-8"))
             self.assertEqual(status["target"], "codex")
             self.assertEqual(status["status"], "approved-unverified")
-            self.assertTrue(
-                any(warning["code"] == "approved-unverified" for warning in status["warnings"])
-            )
+            self.assertTrue(any(warning["code"] == "approved-unverified" for warning in status["warnings"]))
 
     def test_explain_renders_covered_repo_state_from_cache_and_artifacts(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
@@ -3016,7 +2997,9 @@ class RepoOnboardingTests(unittest.TestCase):
             self.assertEqual(exclude_result.returncode, 0, exclude_result.stderr)
             validate_excluded = self.run_cli(tmp_path, "validate", "exclude-flow")
             self.assertEqual(validate_excluded.returncode, 0, validate_excluded.stderr)
-            excluded_approval = json.loads((root / "repos" / "exclude-flow" / "approval.yml").read_text(encoding="utf-8"))
+            excluded_approval = json.loads(
+                (root / "repos" / "exclude-flow" / "approval.yml").read_text(encoding="utf-8")
+            )
             self.assertIn(excluded, excluded_approval["excluded_artifacts"])
             self.assertNotIn(excluded, {item["path"] for item in excluded_approval["protected_artifacts"]})
 
@@ -3034,7 +3017,9 @@ class RepoOnboardingTests(unittest.TestCase):
             self.assertEqual(entries["reject-flow"].coverage_status, "needs-investigation")
             trace_events = [
                 json.loads(line)
-                for line in (root / "trace-summaries" / "approval-events.jsonl").read_text(encoding="utf-8").splitlines()
+                for line in (root / "trace-summaries" / "approval-events.jsonl")
+                .read_text(encoding="utf-8")
+                .splitlines()
             ]
             decisions = [event["payload"]["decision"] for event in trace_events]
             self.assertGreaterEqual(decisions.count("approved"), 2)
@@ -3223,7 +3208,17 @@ class RepoOnboardingTests(unittest.TestCase):
             ]
             self.assertTrue(trace_events)
             first = trace_events[0]
-            for field in ("schema_version", "event_id", "event_type", "timestamp", "repo_id", "pack_ref", "actor", "adapter", "payload"):
+            for field in (
+                "schema_version",
+                "event_id",
+                "event_type",
+                "timestamp",
+                "repo_id",
+                "pack_ref",
+                "actor",
+                "adapter",
+                "payload",
+            ):
                 self.assertIn(field, first)
             event_types = {event["event_type"] for event in trace_events}
             self.assertIn("adapter_run", event_types)
@@ -3313,8 +3308,12 @@ class RepoOnboardingTests(unittest.TestCase):
             self.assertIn("status=needs-investigation", blocked_eval.stdout)
 
             root = tmp_path / DEFAULT_PACK_DIR
-            verified_report = json.loads((root / "repos" / "verified-flow" / "eval-report.yml").read_text(encoding="utf-8"))
-            blocked_report = json.loads((root / "repos" / "blocked-flow" / "eval-report.yml").read_text(encoding="utf-8"))
+            verified_report = json.loads(
+                (root / "repos" / "verified-flow" / "eval-report.yml").read_text(encoding="utf-8")
+            )
+            blocked_report = json.loads(
+                (root / "repos" / "blocked-flow" / "eval-report.yml").read_text(encoding="utf-8")
+            )
             self.assertEqual(verified_report["status"], "verified")
             self.assertEqual(blocked_report["status"], "needs-investigation")
             self.assertIn("baseline", verified_report)
@@ -3341,9 +3340,7 @@ class RepoOnboardingTests(unittest.TestCase):
             artifact_root = root / "repos" / "fixture-repo"
             approval = json.loads((artifact_root / "approval.yml").read_text(encoding="utf-8"))
             protected_before = {
-                path: (root / path).read_bytes()
-                for path in approval["approved_artifacts"]
-                if isinstance(path, str)
+                path: (root / path).read_bytes() for path in approval["approved_artifacts"] if isinstance(path, str)
             }
 
             refresh_result = self.run_cli(tmp_path, "cache", "refresh", "fixture-repo")
@@ -3432,13 +3429,24 @@ class RepoOnboardingTests(unittest.TestCase):
             self.assertIn("Validation passed for fixture-repo", validate_result.stdout)
             self.assertIn("Created refresh proposal prop_002 for fixture-repo", refresh_result.stdout)
             first_metadata = json.loads((root / "proposals" / "prop_001" / "metadata.yml").read_text(encoding="utf-8"))
-            refresh_metadata = json.loads((root / "proposals" / "prop_002" / "metadata.yml").read_text(encoding="utf-8"))
+            refresh_metadata = json.loads(
+                (root / "proposals" / "prop_002" / "metadata.yml").read_text(encoding="utf-8")
+            )
             self.assertEqual(first_metadata["status"], "applied")
             self.assertEqual(refresh_metadata["status"], "open")
             self.assertEqual(refresh_metadata["proposal_type"], "onboarding summary updates")
             evidence_text = (root / "proposals" / "prop_001" / "evidence.jsonl").read_text(encoding="utf-8")
             self.assertNotIn("do-not-leak", evidence_text)
-            exported_skill = repo_path / ".agent-harness" / "cache" / "exports" / "generic" / "skills" / "build-test-debug" / "SKILL.md"
+            exported_skill = (
+                repo_path
+                / ".agent-harness"
+                / "cache"
+                / "exports"
+                / "generic"
+                / "skills"
+                / "build-test-debug"
+                / "SKILL.md"
+            )
             self.assertIn("Proposal note: review recent trace evidence", exported_skill.read_text(encoding="utf-8"))
 
     def test_cli_improve_reports_no_proposal_without_evidence(self) -> None:
@@ -3615,9 +3623,7 @@ class RepoOnboardingTests(unittest.TestCase):
             self.assertEqual(metadata["applied_artifacts"], ["repos/fixture-repo/skills/build-test-debug/SKILL.md"])
             approval = json.loads((root / "repos" / "fixture-repo" / "approval.yml").read_text(encoding="utf-8"))
             protected = {
-                item["path"]: item["sha256"]
-                for item in approval["protected_artifacts"]
-                if isinstance(item, dict)
+                item["path"]: item["sha256"] for item in approval["protected_artifacts"] if isinstance(item, dict)
             }
             self.assertEqual(
                 protected["repos/fixture-repo/skills/build-test-debug/SKILL.md"],
@@ -3719,7 +3725,9 @@ class RepoOnboardingTests(unittest.TestCase):
             self.assertEqual(self.run_cli(tmp_path, "repo", "add", "fixture-repo").returncode, 0)
             self.assertEqual(self.run_cli(tmp_path, "onboard", "fixture-repo").returncode, 0)
             root = tmp_path / DEFAULT_PACK_DIR
-            manifest = json.loads((root / "repos" / "fixture-repo" / "scan" / "scan-manifest.yml").read_text(encoding="utf-8"))
+            manifest = json.loads(
+                (root / "repos" / "fixture-repo" / "scan" / "scan-manifest.yml").read_text(encoding="utf-8")
+            )
             self.assertEqual(manifest["repo_source_commit"], source_commit)
 
             refresh_result = self.run_cli(tmp_path, "refresh", "fixture-repo")
@@ -3740,9 +3748,7 @@ class RepoOnboardingTests(unittest.TestCase):
             root = tmp_path / DEFAULT_PACK_DIR
             approval = json.loads((root / "repos" / "fixture-repo" / "approval.yml").read_text(encoding="utf-8"))
             protected_before = {
-                path: (root / path).read_bytes()
-                for path in approval["approved_artifacts"]
-                if isinstance(path, str)
+                path: (root / path).read_bytes() for path in approval["approved_artifacts"] if isinstance(path, str)
             }
             (repo_path / "README.md").write_text("# Fixture Repo\n\nChanged service notes.\n", encoding="utf-8")
             current_commit = self.commit_fixture_repo(repo_path, "change readme")
@@ -3774,7 +3780,16 @@ class RepoOnboardingTests(unittest.TestCase):
             root = tmp_path / DEFAULT_PACK_DIR
             self.assertEqual(self.run_cli(tmp_path, "cache", "refresh", "fixture-repo").returncode, 0)
             self.assertEqual(self.run_cli(tmp_path, "export", "generic", "fixture-repo").returncode, 0)
-            export_skill = repo_path / ".agent-harness" / "cache" / "exports" / "generic" / "skills" / "build-test-debug" / "SKILL.md"
+            export_skill = (
+                repo_path
+                / ".agent-harness"
+                / "cache"
+                / "exports"
+                / "generic"
+                / "skills"
+                / "build-test-debug"
+                / "SKILL.md"
+            )
             exported_before = export_skill.read_bytes()
             trace_path = root / "trace-summaries" / "eval-events.jsonl"
             trace_path.write_text(
@@ -3895,7 +3910,9 @@ class RepoOnboardingTests(unittest.TestCase):
             self.assertEqual(self.run_cli(tmp_path, "repo", "add", "api-service").returncode, 0)
             self.assertEqual(self.run_cli(tmp_path, "repo", "add", "vendor-sdk", "--external").returncode, 0)
             self.assertEqual(
-                self.run_cli(tmp_path, "repo", "deactivate", "api-service", "--reason", "Temporarily excluded").returncode,
+                self.run_cli(
+                    tmp_path, "repo", "deactivate", "api-service", "--reason", "Temporarily excluded"
+                ).returncode,
                 0,
             )
 
@@ -4068,13 +4085,7 @@ class RepoOnboardingTests(unittest.TestCase):
             self.assertEqual(self.run_cli(tmp_path, "repo", "add", "fixture-repo").returncode, 0)
             self.assertEqual(self.run_cli(tmp_path, "onboard", "fixture-repo").returncode, 0)
             skill_path = (
-                tmp_path
-                / DEFAULT_PACK_DIR
-                / "repos"
-                / "fixture-repo"
-                / "skills"
-                / "build-test-debug"
-                / "SKILL.md"
+                tmp_path / DEFAULT_PACK_DIR / "repos" / "fixture-repo" / "skills" / "build-test-debug" / "SKILL.md"
             )
             skill_path.write_text(
                 skill_path.read_text(encoding="utf-8").replace(

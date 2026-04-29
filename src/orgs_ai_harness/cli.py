@@ -27,18 +27,9 @@ from orgs_ai_harness.proposals import (
     apply_proposal,
     improve_repo,
     list_proposals,
+    refresh_repo,
     reject_proposal,
     render_proposal_show,
-    refresh_repo,
-)
-from orgs_ai_harness.repo_registry import (
-    RepoEntry,
-    RepoRegistryError,
-    add_repo,
-    deactivate_repo,
-    load_repo_entries,
-    remove_repo,
-    set_repo_path,
 )
 from orgs_ai_harness.repo_discovery import (
     DiscoveredRepo,
@@ -53,8 +44,16 @@ from orgs_ai_harness.repo_discovery import (
     select_discovered_repos_interactively,
 )
 from orgs_ai_harness.repo_onboarding import RepoOnboardingError, onboard_repo, scan_repo_only
+from orgs_ai_harness.repo_registry import (
+    RepoEntry,
+    RepoRegistryError,
+    add_repo,
+    deactivate_repo,
+    load_repo_entries,
+    remove_repo,
+    set_repo_path,
+)
 from orgs_ai_harness.validation import validate_org_pack, validate_repo_onboarding
-
 
 PROJECT_ROOT = Path(__file__).resolve().parents[2]
 ORG_LEVEL_SKILL_PROMPT_PATH = PROJECT_ROOT / "local-docs" / "ORG_LEVEL_SKILL_BUILD.md"
@@ -69,7 +68,9 @@ def build_parser() -> argparse.ArgumentParser:
     setup_parser.add_argument("--include-archived", action="store_true", help="Include archived GitHub repositories")
     setup_parser.add_argument("--include-forks", action="store_true", help="Include fork GitHub repositories")
     setup_parser.add_argument("--llm", choices=("codex", "claude", "template"), help="Skill generator to use")
-    setup_parser.add_argument("--skill-target", choices=("codex", "claude", "both"), help="Where to install generated skills")
+    setup_parser.add_argument(
+        "--skill-target", choices=("codex", "claude", "both"), help="Where to install generated skills"
+    )
 
     org_parser = subparsers.add_parser("org", help="Manage org skill packs")
     org_subparsers = org_parser.add_subparsers(dest="org_command", required=True)
@@ -96,8 +97,12 @@ def build_parser() -> argparse.ArgumentParser:
     repo_discover.add_argument("--include-forks", action="store_true", help="Include fork repositories")
     repo_discover.add_argument("--clone", action="store_true", help="Clone selected repositories")
     repo_discover.add_argument("--clone-dir", help="Directory where selected repositories should be cloned")
-    repo_discover.add_argument("--llm", choices=("codex", "claude", "template"), help="Skill generator for interactive follow-up")
-    repo_discover.add_argument("--skill-target", choices=("codex", "claude", "both"), help="Where to install generated skills")
+    repo_discover.add_argument(
+        "--llm", choices=("codex", "claude", "template"), help="Skill generator for interactive follow-up"
+    )
+    repo_discover.add_argument(
+        "--skill-target", choices=("codex", "claude", "both"), help="Where to install generated skills"
+    )
     repo_set_path = repo_subparsers.add_parser("set-path", help="Repair a registered local repository path")
     repo_set_path.add_argument("repo_id", help="Registered repo id")
     repo_set_path.add_argument("path", help="New local repository path")
@@ -213,10 +218,7 @@ def main(argv: list[str] | None = None) -> int:
 
             root = attach_org_pack(Path.cwd(), args.repo)
             if root is None:
-                print(
-                    "Recorded remote org skill pack attachment. "
-                    "No clone, push, or hosted setup was performed."
-                )
+                print("Recorded remote org skill pack attachment. No clone, push, or hosted setup was performed.")
                 return 0
 
             result = validate_org_pack(root)
@@ -287,10 +289,7 @@ def main(argv: list[str] | None = None) -> int:
         if args.command == "cache" and args.cache_command == "refresh":
             root = resolve_default_root(Path.cwd())
             result = refresh_cache(root, args.repo_id)
-            print(
-                f"Refreshed cache for {result.repo_id}; pack_ref={result.pack_ref}; "
-                f"cache={result.cache_root}"
-            )
+            print(f"Refreshed cache for {result.repo_id}; pack_ref={result.pack_ref}; cache={result.cache_root}")
             return 0
 
         if args.command == "export":
@@ -378,17 +377,16 @@ def main(argv: list[str] | None = None) -> int:
                 return 0
 
             if args.repo_command == "discover":
-                source_count = sum(
-                    item is not None
-                    for item in (args.github_source, args.github_org, args.github_user)
-                )
+                source_count = sum(item is not None for item in (args.github_source, args.github_org, args.github_user))
                 if source_count > 1:
                     raise RepoDiscoveryError(
                         "repo discover accepts only one GitHub source: a URL, --github-org, or --github-user; "
                         "only one of --github-org or --github-user may be used"
                     )
                 if source_count == 0:
-                    raise RepoDiscoveryError("repo discover requires a GitHub profile URL, --github-org, or --github-user")
+                    raise RepoDiscoveryError(
+                        "repo discover requires a GitHub profile URL, --github-org, or --github-user"
+                    )
                 if args.select is None and not sys.stdin.isatty():
                     raise RepoDiscoveryError("repo discover requires --select in non-interactive use")
 
@@ -672,8 +670,7 @@ def _run_post_registration_wizard(
                 )
                 result = approve_repo(root, entry.id, exclusions=(), rationale=rationale)
                 print(
-                    f"Approved {len(result.approved_artifacts)} artifact(s) for {entry.id}; "
-                    "status=approved-unverified",
+                    f"Approved {len(result.approved_artifacts)} artifact(s) for {entry.id}; status=approved-unverified",
                     file=output_stream,
                 )
 
@@ -841,7 +838,9 @@ def _register_or_reuse_discovered_repos(
         register_discovered_repos(
             root,
             new_selected,
-            local_paths={repo.id: local_paths[repo.id] for repo in new_selected if local_paths and repo.id in local_paths},
+            local_paths={
+                repo.id: local_paths[repo.id] for repo in new_selected if local_paths and repo.id in local_paths
+            },
         )
         if new_selected
         else ()
@@ -1022,7 +1021,9 @@ def _generate_global_org_skill(root: Path, *, generator: str, skill_target: str)
     )
     if returncode != 0:
         message = output_tail or "LLM command failed without output"
-        raise OrgPackError(f"{generator} org-level skill generation failed. See log: {log_path}. Last output: {message}")
+        raise OrgPackError(
+            f"{generator} org-level skill generation failed. See log: {log_path}. Last output: {message}"
+        )
     _ensure_global_skill_outputs(staging_roots, generator, output_tail, log_path)
     _install_generated_skills(staging_roots[0], target_roots)
     return target_roots[0]
@@ -1106,9 +1107,11 @@ Org pack root:
 Additional skill-shaping constraints:
 - Prefer many small, specialized skills over a few broad general skills.
 - Create targeted org-level skills with precise trigger metadata.
-- Skill descriptions are critical routing metadata; make them concrete and narrow so agents avoid unnecessary context loading.
+- Skill descriptions are critical routing metadata; make them concrete and narrow
+  so agents avoid unnecessary context loading.
 - Do not create one large "org practices" skill.
-- If evidence is weak or repo conventions conflict, create a detector/decision skill rather than a universal policy skill.
+- If evidence is weak or repo conventions conflict, create a detector/decision
+  skill rather than a universal policy skill.
 """
 
 
@@ -1155,11 +1158,11 @@ def _ensure_global_skill_outputs(
     log_path: Path,
 ) -> None:
     skill_names_by_root = [_skill_names_under(root) for root in target_roots]
-    missing_roots = [str(root) for root, names in zip(target_roots, skill_names_by_root) if not names]
+    missing_roots = [str(root) for root, names in zip(target_roots, skill_names_by_root, strict=True) if not names]
     first_names = set(skill_names_by_root[0]) if skill_names_by_root else set()
     inconsistent_roots = [
         str(root)
-        for root, names in zip(target_roots[1:], skill_names_by_root[1:])
+        for root, names in zip(target_roots[1:], skill_names_by_root[1:], strict=True)
         if set(names) != first_names
     ]
     if not missing_roots and not inconsistent_roots:
@@ -1177,7 +1180,9 @@ def _ensure_global_skill_outputs(
 
 
 def _install_generated_skills(source_skills_root: Path, target_roots: tuple[Path, ...]) -> None:
-    skill_roots = [path for path in sorted(source_skills_root.iterdir()) if path.is_dir() and (path / "SKILL.md").is_file()]
+    skill_roots = [
+        path for path in sorted(source_skills_root.iterdir()) if path.is_dir() and (path / "SKILL.md").is_file()
+    ]
     for target_root in target_roots:
         target_root.mkdir(parents=True, exist_ok=True)
         for skill_root in skill_roots:
@@ -1234,7 +1239,10 @@ def _run_llm_command_with_progress(
                     last_progress = time.monotonic()
         returncode = process.wait()
         reader.join(timeout=1)
-    print(f"{label}: {'completed' if returncode == 0 else f'failed with exit {returncode}'}. Log: {log_path}", file=sys.stderr)
+    print(
+        f"{label}: {'completed' if returncode == 0 else f'failed with exit {returncode}'}. Log: {log_path}",
+        file=sys.stderr,
+    )
     return returncode, "\n".join(tail_lines[-10:])
 
 

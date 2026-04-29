@@ -2,10 +2,10 @@
 
 from __future__ import annotations
 
-from dataclasses import dataclass
-from datetime import UTC, datetime
 import hashlib
 import json
+from dataclasses import dataclass
+from datetime import UTC, datetime
 from pathlib import Path
 
 from orgs_ai_harness.repo_registry import RepoEntry, load_repo_entries, save_repo_entries
@@ -241,9 +241,7 @@ def _resolve_exclusions(
             raise ApprovalError("approval exclusion cannot be empty")
         root_relative = _root_relative_exclusion(root, artifact_root, exclusion)
         matches = [
-            artifact
-            for artifact in artifacts
-            if artifact == root_relative or artifact.startswith(f"{root_relative}/")
+            artifact for artifact in artifacts if artifact == root_relative or artifact.startswith(f"{root_relative}/")
         ]
         if not matches and root_relative in artifact_set:
             matches = [root_relative]
@@ -351,9 +349,7 @@ def _prior_diff(root: Path, artifact_root: Path, current_artifacts: list[str]) -
     added = sorted(current - prior)
     removed = sorted(prior - current)
     changed = sorted(
-        path
-        for path in current & prior
-        if (root / path).is_file() and _sha256(root / path) != prior_hashes[path]
+        path for path in current & prior if (root / path).is_file() and _sha256(root / path) != prior_hashes[path]
     )
     unchanged = len((current & prior) - set(changed))
     return [

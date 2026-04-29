@@ -2,13 +2,13 @@
 
 from __future__ import annotations
 
-from dataclasses import dataclass
-from datetime import UTC, datetime
 import hashlib
 import json
-from pathlib import Path
 import re
 import subprocess
+from dataclasses import dataclass
+from datetime import UTC, datetime
+from pathlib import Path
 
 from orgs_ai_harness.config import split_top_level_blocks
 from orgs_ai_harness.repo_registry import RepoEntry, load_repo_entries
@@ -93,7 +93,8 @@ def improve_repo(root: Path, repo_id: str) -> ImproveResult:
 
     metadata = _proposal_metadata(root, entry, proposal_id, evidence)
     summary = _render_summary(metadata, evidence)
-    target = str(metadata["target_artifacts"][0])
+    target_artifacts = metadata.get("target_artifacts")
+    target = str(target_artifacts[0]) if isinstance(target_artifacts, list) and target_artifacts else ""
     patch = _render_patch(target)
 
     (proposal_root / "summary.md").write_text(summary, encoding="utf-8")
@@ -315,12 +316,16 @@ def _find_repo(root: Path, repo_id: str) -> RepoEntry:
         if not entry.active:
             raise ProposalError(f"repo is not active selected coverage: {normalized_repo_id}")
         if entry.external or entry.coverage_status == "external":
-            raise ProposalError(f"repo is an external dependency reference, not selected coverage: {normalized_repo_id}")
+            raise ProposalError(
+                f"repo is an external dependency reference, not selected coverage: {normalized_repo_id}"
+            )
         return entry
     raise ProposalError(f"repo id is not registered: {normalized_repo_id}")
 
 
-def _collect_evidence(root: Path, repo_id: str, redaction_patterns: tuple[re.Pattern[str], ...]) -> list[dict[str, object]]:
+def _collect_evidence(
+    root: Path, repo_id: str, redaction_patterns: tuple[re.Pattern[str], ...]
+) -> list[dict[str, object]]:
     evidence: list[dict[str, object]] = []
     trace_root = root / "trace-summaries"
     for trace_path in sorted(trace_root.glob("*.jsonl")):
@@ -376,15 +381,11 @@ def _proposal_metadata(
     evidence: list[dict[str, object]],
 ) -> dict[str, object]:
     created_from = sorted({str(item["created_from"]) for item in evidence})
-    affected_evals = sorted(
-        {
-            str(payload.get("task_id"))
-            for item in evidence
-            if isinstance(item.get("payload"), dict)
-            for payload in (item["payload"],)
-            if isinstance(payload.get("task_id"), str) and payload.get("task_id")
-        }
-    )
+    affected_evals: list[str] = []
+    for item in evidence:
+        payload = item.get("payload")
+        if isinstance(payload, dict) and isinstance(payload.get("task_id"), str) and payload.get("task_id"):
+            affected_evals.append(str(payload["task_id"]))
     target = _target_artifact(root, entry)
     return {
         "schema_version": 1,
@@ -394,7 +395,7 @@ def _proposal_metadata(
         "risk": "medium" if "eval_failure" in created_from else "low",
         "proposal_type": _proposal_type_for(target, created_from),
         "target_artifacts": [target],
-        "affected_evals": affected_evals,
+        "affected_evals": sorted(set(affected_evals)),
         "evidence": [str(item["trace"]) for item in evidence],
         "created_from": created_from,
         "created_at": datetime.now(UTC).isoformat(),
@@ -409,41 +410,49 @@ def _target_artifact(root: Path, entry: RepoEntry) -> str:
 
 
 def _render_summary(metadata: dict[str, object], evidence: list[dict[str, object]]) -> str:
-    sources = ", ".join(str(item) for item in metadata.get("created_from", []))
+    created_from = metadata.get("created_from")
+    sources = ", ".join(str(item) for item in created_from) if isinstance(created_from, list) else ""
     target_artifacts = metadata.get("target_artifacts")
     targets = target_artifacts if isinstance(target_artifacts, list) else []
-    return "\n".join(
-        [
-            f"# Proposal {metadata['id']}: evidence-backed update for {metadata['repo_id']}",
-            "",
-            f"- Status: {metadata['status']}",
-            f"- Risk: {metadata['risk']}",
-            f"- Created From: {sources}",
-            f"- Evidence Items: {len(evidence)}",
-            "",
-            "## Target Artifacts",
-            *[f"- {target}" for target in targets],
-            "",
-            "## Rationale",
-            "Trace and review evidence indicate the accepted repo knowledge may need a human-reviewed update.",
-        ]
-    ) + "\n"
+    return (
+        "\n".join(
+            [
+                f"# Proposal {metadata['id']}: evidence-backed update for {metadata['repo_id']}",
+                "",
+                f"- Status: {metadata['status']}",
+                f"- Risk: {metadata['risk']}",
+                f"- Created From: {sources}",
+                f"- Evidence Items: {len(evidence)}",
+                "",
+                "## Target Artifacts",
+                *[f"- {target}" for target in targets],
+                "",
+                "## Rationale",
+                "Trace and review evidence indicate the accepted repo knowledge may need a human-reviewed update.",
+            ]
+        )
+        + "\n"
+    )
 
 
 def _render_refresh_summary(metadata: dict[str, object]) -> str:
-    return "\n".join(
-        [
-            f"# Proposal {metadata['id']}: refresh updates for {metadata['repo_id']}",
-            "",
-            f"- Status: {metadata['status']}",
-            f"- Risk: {metadata['risk']}",
-            f"- Previous Source Commit: {metadata['previous_source_commit']}",
-            f"- Current Source Commit: {metadata['current_source_commit']}",
-            "",
-            "## Rationale",
-            "The repository source changed since the last recorded onboarding scan. Review the proposed update before mutating accepted artifacts.",
-        ]
-    ) + "\n"
+    return (
+        "\n".join(
+            [
+                f"# Proposal {metadata['id']}: refresh updates for {metadata['repo_id']}",
+                "",
+                f"- Status: {metadata['status']}",
+                f"- Risk: {metadata['risk']}",
+                f"- Previous Source Commit: {metadata['previous_source_commit']}",
+                f"- Current Source Commit: {metadata['current_source_commit']}",
+                "",
+                "## Rationale",
+                "The repository source changed since the last recorded onboarding scan. "
+                "Review the proposed update before mutating accepted artifacts.",
+            ]
+        )
+        + "\n"
+    )
 
 
 def _render_patch(target: str) -> str:
@@ -540,7 +549,9 @@ def _ensure_open(metadata: dict[str, object], proposal_root: Path) -> None:
 def _metadata_string(metadata: dict[str, object], field: str, proposal_root: Path) -> str:
     value = metadata.get(field)
     if not isinstance(value, str) or not value.strip():
-        raise ProposalError(f"proposal metadata field {field} must be a non-empty string: {proposal_root / 'metadata.yml'}")
+        raise ProposalError(
+            f"proposal metadata field {field} must be a non-empty string: {proposal_root / 'metadata.yml'}"
+        )
     return value
 
 
@@ -549,10 +560,14 @@ def _metadata_string_list(metadata: dict[str, object], field: str, proposal_root
     if not isinstance(value, list):
         raise ProposalError(f"proposal metadata field {field} must be a list: {proposal_root / 'metadata.yml'}")
     if field != "affected_evals" and not value:
-        raise ProposalError(f"proposal metadata field {field} must be a non-empty list: {proposal_root / 'metadata.yml'}")
+        raise ProposalError(
+            f"proposal metadata field {field} must be a non-empty list: {proposal_root / 'metadata.yml'}"
+        )
     strings = [item for item in value if isinstance(item, str) and item.strip()]
     if len(strings) != len(value):
-        raise ProposalError(f"proposal metadata field {field} must contain only strings: {proposal_root / 'metadata.yml'}")
+        raise ProposalError(
+            f"proposal metadata field {field} must contain only strings: {proposal_root / 'metadata.yml'}"
+        )
     return strings
 
 
@@ -710,7 +725,11 @@ def _redact_jsonable(value: object, patterns: tuple[re.Pattern[str], ...]) -> ob
         path_value = value.get("path")
         if isinstance(path_value, str) and _looks_sensitive_path(path_value):
             return {
-                str(key): ("[REDACTED SENSITIVE FILE CONTENT]" if key in {"content", "contents", "text"} else _redact_jsonable(item, patterns))
+                str(key): (
+                    "[REDACTED SENSITIVE FILE CONTENT]"
+                    if key in {"content", "contents", "text"}
+                    else _redact_jsonable(item, patterns)
+                )
                 for key, item in value.items()
             }
         return {str(key): _redact_jsonable(item, patterns) for key, item in value.items()}

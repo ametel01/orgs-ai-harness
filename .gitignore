@@ -2,3 +2,5 @@ local-docs/
 .DS_Store
 __pycache__/
 *.py[cod]
+.venv/
+*.egg-info/

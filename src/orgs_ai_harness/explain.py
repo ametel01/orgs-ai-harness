@@ -2,8 +2,8 @@
 
 from __future__ import annotations
 
-from datetime import UTC, datetime
 import json
+from datetime import UTC, datetime
 from pathlib import Path
 
 from orgs_ai_harness.repo_registry import RepoEntry, load_repo_entries
@@ -32,7 +32,7 @@ def render_explain(root: Path, repo_id: str) -> str:
         f"Explain: {entry.id}",
         "",
         "Coverage",
-        f"- Covered: yes",
+        "- Covered: yes",
         f"- Why: {entry.purpose or 'selected in harness repo registry'}",
         f"- Owner: {entry.owner or 'unknown'}",
         f"- Lifecycle Status: {entry.coverage_status}",
@@ -63,6 +63,8 @@ def render_explain(root: Path, repo_id: str) -> str:
 def _render_uncovered_explain(root: Path, repo_id: str) -> str:
     normalized_repo_id = _normalize_repo_id(repo_id)
     event = _record_boundary_decision(root, normalized_repo_id)
+    payload = event.get("payload")
+    decision = payload.get("decision") if isinstance(payload, dict) else "uncovered repo was not auto-added"
     lines = [
         f"Explain: {normalized_repo_id}",
         "",
@@ -74,7 +76,7 @@ def _render_uncovered_explain(root: Path, repo_id: str) -> str:
         "- Pack Ref: none",
         "",
         "Boundary Decisions",
-        f"- {event['event_id']}: {event['payload']['decision']}",
+        f"- {event['event_id']}: {decision}",
         "",
         "Next Actions",
         f"- Run `harness repo add <path-or-url>` to explicitly cover {normalized_repo_id}.",
@@ -208,8 +210,7 @@ def _boundary_decisions(root: Path, repo_id: str) -> list[str]:
         if event.get("repo_id") != repo_id and payload.get("referenced_repo_id") != repo_id:
             continue
         rendered.append(
-            f"{_string(event.get('event_id'), 'unknown')}: "
-            f"{_string(payload.get('decision'), 'boundary decision')}"
+            f"{_string(event.get('event_id'), 'unknown')}: {_string(payload.get('decision'), 'boundary decision')}"
         )
     return rendered[-5:] or ["None"]
 

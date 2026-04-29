@@ -2,10 +2,10 @@
 
 from __future__ import annotations
 
-from dataclasses import dataclass
 import json
-from pathlib import Path
 import re
+from dataclasses import dataclass
+from pathlib import Path
 
 from orgs_ai_harness.config import block_has_field, read_block_scalar, split_top_level_blocks
 from orgs_ai_harness.repo_registry import RepoRegistryError, parse_repo_block
@@ -232,12 +232,16 @@ def _validate_scan_manifest_artifact(artifact: dict[str, object], path: Path, ro
         errors.append(f"scan manifest field scanned_paths must be a list: {path.relative_to(root)}")
     else:
         for index, record in enumerate(scanned_paths, start=1):
-            _validate_path_record(record, f"scan manifest scanned_paths item {index}", require_reason=False, errors=errors)
+            _validate_path_record(
+                record, f"scan manifest scanned_paths item {index}", require_reason=False, errors=errors
+            )
     if not isinstance(skipped_paths, list):
         errors.append(f"scan manifest field skipped_paths must be a list: {path.relative_to(root)}")
     else:
         for index, record in enumerate(skipped_paths, start=1):
-            _validate_path_record(record, f"scan manifest skipped_paths item {index}", require_reason=True, errors=errors)
+            _validate_path_record(
+                record, f"scan manifest skipped_paths item {index}", require_reason=True, errors=errors
+            )
 
 
 def _validate_path_record(record: object, label: str, *, require_reason: bool, errors: list[str]) -> None:
@@ -312,7 +316,9 @@ def _validate_generated_skills(skills_root: Path, root: Path, errors: list[str])
             if not isinstance(description, str) or not description.strip():
                 errors.append(f"SKILL.md frontmatter description must be non-empty: {skill_path.relative_to(root)}")
             elif len(description) > 1024:
-                errors.append(f"SKILL.md frontmatter description exceeds 1024 characters: {skill_path.relative_to(root)}")
+                errors.append(
+                    f"SKILL.md frontmatter description exceeds 1024 characters: {skill_path.relative_to(root)}"
+                )
         _validate_skill_references(text, skill_root, root, errors)
         skill_names.add(name)
 
@@ -436,7 +442,7 @@ def _validate_command_permissions(
 ) -> None:
     permissions = artifact.get("command_permissions")
     if not isinstance(permissions, list) or not permissions:
-        errors.append(f"scripts/manifest.yml field command_permissions must be a non-empty list")
+        errors.append("scripts/manifest.yml field command_permissions must be a non-empty list")
         return
 
     commands: set[str] = set()
@@ -446,11 +452,15 @@ def _validate_command_permissions(
             continue
         command = permission.get("command")
         if not isinstance(command, str) or not command.strip():
-            errors.append(f"scripts/manifest.yml command_permissions item {index} field command must be a non-empty string")
+            errors.append(
+                f"scripts/manifest.yml command_permissions item {index} field command must be a non-empty string"
+            )
         else:
             commands.add(command)
         if not isinstance(permission.get("reason"), str) or not str(permission.get("reason")).strip():
-            errors.append(f"scripts/manifest.yml command_permissions item {index} field reason must be a non-empty string")
+            errors.append(
+                f"scripts/manifest.yml command_permissions item {index} field reason must be a non-empty string"
+            )
         for field in ("review_required", "local_only"):
             if permission.get(field) is not True:
                 errors.append(f"scripts/manifest.yml command_permissions item {index} field {field} must be true")
@@ -462,8 +472,7 @@ def _validate_command_permissions(
     expected_validate = f"harness validate {artifact_root.name}"
     if expected_validate not in commands:
         errors.append(
-            "scripts/manifest.yml missing command permission record for local validation command: "
-            f"{expected_validate}"
+            f"scripts/manifest.yml missing command permission record for local validation command: {expected_validate}"
         )
 
 
@@ -485,7 +494,13 @@ def _validate_pack_report(path: Path, root: Path, errors: list[str]) -> None:
 
 
 def _validate_approval_metadata(root: Path, repo_id: str, path: Path, errors: list[str]) -> None:
-    entries = parse_repo_block(next(block for block in split_top_level_blocks((root / "harness.yml").read_text(encoding="utf-8")) if block.key == "repos"))
+    entries = parse_repo_block(
+        next(
+            block
+            for block in split_top_level_blocks((root / "harness.yml").read_text(encoding="utf-8"))
+            if block.key == "repos"
+        )
+    )
     entry = next((candidate for candidate in entries if candidate.id == repo_id), None)
     if entry is None or entry.coverage_status not in {"approved-unverified", "verified"}:
         return
@@ -502,7 +517,7 @@ def _validate_approval_metadata(root: Path, repo_id: str, path: Path, errors: li
         if artifact.get("status") != "verified":
             errors.append(f"approval.yml field status must be verified: {path.relative_to(root)}")
         if artifact.get("verified") is not True:
-            errors.append(f"approval.yml field verified must be true for verified packs")
+            errors.append("approval.yml field verified must be true for verified packs")
         verification = artifact.get("verification")
         if not isinstance(verification, dict):
             errors.append("approval.yml must include verification metadata for verified packs")
@@ -510,7 +525,7 @@ def _validate_approval_metadata(root: Path, repo_id: str, path: Path, errors: li
         if artifact.get("status") != "approved-unverified":
             errors.append(f"approval.yml field status must be approved-unverified: {path.relative_to(root)}")
         if artifact.get("verified") is not False:
-            errors.append(f"approval.yml field verified must be false for approved-unverified packs")
+            errors.append("approval.yml field verified must be false for approved-unverified packs")
         warnings = artifact.get("warnings")
         if not isinstance(warnings, list) or not any(
             isinstance(warning, dict) and warning.get("code") == "approved-unverified" for warning in warnings
@@ -519,18 +534,18 @@ def _validate_approval_metadata(root: Path, repo_id: str, path: Path, errors: li
     if artifact.get("decision") != "approved":
         errors.append(f"approval.yml field decision must be approved: {path.relative_to(root)}")
     if artifact.get("pack_ref") != entry.pack_ref:
-        errors.append(f"approval.yml field pack_ref must match harness.yml repo pack_ref")
+        errors.append("approval.yml field pack_ref must match harness.yml repo pack_ref")
 
     approved_artifacts = artifact.get("approved_artifacts")
     if not isinstance(approved_artifacts, list) or not approved_artifacts:
-        errors.append(f"approval.yml field approved_artifacts must be a non-empty list")
+        errors.append("approval.yml field approved_artifacts must be a non-empty list")
         approved_artifacts = []
     excluded_artifacts = artifact.get("excluded_artifacts")
     if not isinstance(excluded_artifacts, list):
-        errors.append(f"approval.yml field excluded_artifacts must be a list")
+        errors.append("approval.yml field excluded_artifacts must be a list")
     protected_artifacts = artifact.get("protected_artifacts")
     if not isinstance(protected_artifacts, list) or not protected_artifacts:
-        errors.append(f"approval.yml field protected_artifacts must be a non-empty list")
+        errors.append("approval.yml field protected_artifacts must be a non-empty list")
         protected_artifacts = []
 
     approved_paths = {item for item in approved_artifacts if isinstance(item, str)}
@@ -546,11 +561,15 @@ def _validate_approval_metadata(root: Path, repo_id: str, path: Path, errors: li
         protected_paths.add(protected_path)
         if protected.get("protected") is not True:
             errors.append(f"approval.yml protected_artifacts item {index} field protected must be true")
-        if not isinstance(protected.get("sha256"), str) or not re.fullmatch(r"[a-f0-9]{64}", str(protected.get("sha256"))):
+        if not isinstance(protected.get("sha256"), str) or not re.fullmatch(
+            r"[a-f0-9]{64}", str(protected.get("sha256"))
+        ):
             errors.append(f"approval.yml protected_artifacts item {index} field sha256 must be a hex digest")
         artifact_path = root / protected_path
         if not artifact_path.is_file():
-            errors.append(f"approval.yml protected_artifacts item {index} references missing artifact: {protected_path}")
+            errors.append(
+                f"approval.yml protected_artifacts item {index} references missing artifact: {protected_path}"
+            )
 
     if approved_paths and protected_paths != approved_paths:
         errors.append("approval.yml protected_artifacts must exactly match approved_artifacts")
@@ -568,8 +587,7 @@ def _validate_repo_entry(
 
     if not _is_valid_repo_id(repo_id):
         errors.append(
-            f"harness.yml repo id is invalid: {repo_id} "
-            "(use letters, numbers, dots, underscores, or hyphens)"
+            f"harness.yml repo id is invalid: {repo_id} (use letters, numbers, dots, underscores, or hyphens)"
         )
     if coverage_status not in {
         "selected",
@@ -583,7 +601,8 @@ def _validate_repo_entry(
     }:
         errors.append(
             f"harness.yml repo {repo_id} has invalid coverage_status: {coverage_status} "
-            "(supported values: selected, onboarding, needs-investigation, draft, approved-unverified, verified, deactivated, external)"
+            "(supported values: selected, onboarding, needs-investigation, draft, approved-unverified, verified, "
+            "deactivated, external)"
         )
     if coverage_status in {"selected", "onboarding", "needs-investigation", "draft", "approved-unverified", "verified"}:
         if not active:

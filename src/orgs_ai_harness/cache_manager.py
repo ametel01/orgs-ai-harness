@@ -2,12 +2,12 @@
 
 from __future__ import annotations
 
-from dataclasses import dataclass
 import hashlib
 import json
-from pathlib import Path
 import shutil
 import subprocess
+from dataclasses import dataclass
+from pathlib import Path
 
 from orgs_ai_harness.repo_registry import RepoEntry, load_repo_entries
 
@@ -167,7 +167,9 @@ def _find_cacheable_repo(root: Path, repo_id: str) -> RepoEntry:
         if not entry.active:
             raise CacheManagerError(f"repo is not active selected coverage: {normalized_repo_id}")
         if entry.external or entry.coverage_status == "external":
-            raise CacheManagerError(f"repo is an external dependency reference, not selected coverage: {normalized_repo_id}")
+            raise CacheManagerError(
+                f"repo is an external dependency reference, not selected coverage: {normalized_repo_id}"
+            )
         if entry.coverage_status not in {"approved-unverified", "verified"}:
             raise CacheManagerError(
                 f"repo {entry.id} must be approved-unverified or verified before cache refresh: "
@@ -215,9 +217,7 @@ def _enforce_export_policy(
     if status == "draft":
         raise CacheManagerError(f"repo {repo_id} is draft; pass --allow-draft to export intentionally")
     if status == "needs-investigation":
-        raise CacheManagerError(
-            f"repo {repo_id} needs investigation; pass --development to force a development export"
-        )
+        raise CacheManagerError(f"repo {repo_id} needs investigation; pass --development to force a development export")
     raise CacheManagerError(f"repo {repo_id} cannot be exported with status={status}")
 
 

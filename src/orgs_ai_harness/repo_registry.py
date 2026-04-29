@@ -2,11 +2,11 @@
 
 from __future__ import annotations
 
-from dataclasses import dataclass, replace
-from pathlib import Path
 import json
 import os
 import re
+from dataclasses import dataclass, replace
+from pathlib import Path
 
 from orgs_ai_harness.config import ConfigBlock, HarnessConfig, load_harness_config, save_harness_config
 
@@ -241,9 +241,7 @@ def remove_repo(root: Path, repo_id: str, reason: str, *, force: bool = False) -
     if removed_entry is None:
         raise RepoRegistryError(f"repo id is not registered: {normalized_repo_id}")
     if removed_entry.pack_ref is not None and not force:
-        raise RepoRegistryError(
-            f"repo {normalized_repo_id} has onboarding metadata and requires --force to remove"
-        )
+        raise RepoRegistryError(f"repo {normalized_repo_id} has onboarding metadata and requires --force to remove")
 
     save_repo_entries(root / "harness.yml", tuple(remaining_entries))
     return removed_entry

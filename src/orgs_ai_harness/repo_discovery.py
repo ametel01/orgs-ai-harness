@@ -2,14 +2,14 @@
 
 from __future__ import annotations
 
-from collections.abc import Callable
-from dataclasses import dataclass
-from io import TextIOBase
 import json
 import os
-from pathlib import Path
 import shutil
 import subprocess
+from collections.abc import Callable
+from dataclasses import dataclass
+from pathlib import Path
+from typing import TextIO
 from urllib.parse import urlparse
 
 from orgs_ai_harness.repo_registry import (
@@ -73,8 +73,7 @@ def infer_github_owner(source: str) -> str:
     parts = [part for part in parsed.path.split("/") if part]
     if len(parts) != 1:
         raise RepoDiscoveryError(
-            "GitHub profile source must point to an owner or org profile, "
-            "for example https://github.com/acme"
+            "GitHub profile source must point to an owner or org profile, for example https://github.com/acme"
         )
     return parts[0].lstrip("@")
 
@@ -144,8 +143,8 @@ def select_discovered_repos(
 def select_discovered_repos_interactively(
     discovered: tuple[DiscoveredRepo, ...],
     *,
-    input_stream: TextIOBase,
-    output_stream: TextIOBase,
+    input_stream: TextIO,
+    output_stream: TextIO,
 ) -> tuple[DiscoveredRepo, ...]:
     """Prompt a terminal user to select discovered repositories."""
 
@@ -169,14 +168,16 @@ def select_discovered_repos_interactively(
 def _select_discovered_repos_by_line(
     discovered: tuple[DiscoveredRepo, ...],
     *,
-    input_stream: TextIOBase,
-    output_stream: TextIOBase,
+    input_stream: TextIO,
+    output_stream: TextIO,
 ) -> tuple[DiscoveredRepo, ...]:
     print("Discovered repositories:", file=output_stream)
     for index, repo in enumerate(discovered, start=1):
         suffix = _repo_details_suffix(repo)
         print(f"  {index}. {repo.name}{suffix}", file=output_stream)
-    print("Select repositories by number or name, comma-separated. Use 'all' for every listed repo.", file=output_stream)
+    print(
+        "Select repositories by number or name, comma-separated. Use 'all' for every listed repo.", file=output_stream
+    )
     print("Selection: ", end="", file=output_stream)
     output_stream.flush()
 
@@ -217,8 +218,8 @@ def _select_discovered_repos_by_line(
 def _select_discovered_repos_with_checkboxes(
     discovered: tuple[DiscoveredRepo, ...],
     *,
-    input_stream: TextIOBase,
-    output_stream: TextIOBase,
+    input_stream: TextIO,
+    output_stream: TextIO,
 ) -> tuple[DiscoveredRepo, ...]:
     try:
         import termios
@@ -257,7 +258,7 @@ def _run_checkbox_selector(
     discovered: tuple[DiscoveredRepo, ...],
     *,
     read_key: Callable[[], str],
-    output_stream: TextIOBase,
+    output_stream: TextIO,
     terminal_lines: int | None = None,
 ) -> tuple[DiscoveredRepo, ...]:
     cursor = 0
@@ -302,7 +303,7 @@ def _render_checkbox_selector(
     *,
     cursor: int,
     selected_indexes: set[int],
-    output_stream: TextIOBase,
+    output_stream: TextIO,
     message: str,
     terminal_lines: int | None,
 ) -> None:
@@ -338,7 +339,7 @@ def _render_checkbox_selector(
     output_stream.flush()
 
 
-def _read_terminal_selection_key(input_stream: TextIOBase) -> str:
+def _read_terminal_selection_key(input_stream: TextIO) -> str:
     char = input_stream.read(1)
     if char == "\x1b":
         sequence = input_stream.read(2)
@@ -384,7 +385,8 @@ def clone_discovered_repos(
         destination = (clone_root / repo.id).resolve()
         if destination.exists():
             print(
-                f"warning: clone destination already exists for {repo.id}; skipping clone and using existing directory: {destination}",
+                f"warning: clone destination already exists for {repo.id}; "
+                f"skipping clone and using existing directory: {destination}",
             )
             if destination.is_dir():
                 local_paths[repo.id] = _relative_path(destination, root.resolve())

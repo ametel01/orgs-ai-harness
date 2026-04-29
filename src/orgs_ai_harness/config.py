@@ -162,4 +162,3 @@ def _trim_blank_tail(lines: list[str]) -> list[str]:
     while lines and not lines[-1].strip():
         lines.pop()
     return lines
-
