@@ -2,6 +2,7 @@ from __future__ import annotations
 
 from dataclasses import replace
 import hashlib
+import io
 import json
 import os
 import subprocess
@@ -32,6 +33,12 @@ from orgs_ai_harness.repo_registry import (
     remove_repo,
     save_repo_entries,
     set_repo_path,
+)
+from orgs_ai_harness.repo_discovery import (
+    DiscoveredRepo,
+    _run_checkbox_selector,
+    infer_github_owner,
+    select_discovered_repos_interactively,
 )
 from orgs_ai_harness.repo_onboarding import is_sensitive_path
 from orgs_ai_harness.validation import validate_org_pack
@@ -69,6 +76,7 @@ class OrgPackFoundationTests(unittest.TestCase):
     def cli_env(self) -> dict[str, str]:
         env = os.environ.copy()
         env["PYTHONPATH"] = str(Path.cwd() / "src")
+        env["ORGS_AI_HARNESS_SKILL_GENERATOR"] = "template"
         return env
 
     def test_init_creates_pack_that_validates(self) -> None:
@@ -324,6 +332,30 @@ class OrgPackFoundationTests(unittest.TestCase):
             self.assertEqual(validate_result.returncode, 0, validate_result.stderr)
             self.assertIn("Validation passed", validate_result.stdout)
 
+    def test_cli_init_github_profile_url_infers_org_name(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            init_result = subprocess.run(
+                [
+                    sys.executable,
+                    "-m",
+                    "orgs_ai_harness",
+                    "org",
+                    "init",
+                    "--github",
+                    "https://github.com/ametel01",
+                ],
+                cwd=tmp,
+                env=self.cli_env(),
+                text=True,
+                capture_output=True,
+                check=False,
+            )
+
+            self.assertEqual(init_result.returncode, 0, init_result.stderr)
+            self.assertIn("GitHub owner ametel01", init_result.stdout)
+            config = load_harness_config(Path(tmp) / DEFAULT_PACK_DIR / "harness.yml")
+            self.assertEqual(config.org_name, "ametel01")
+
     def test_cli_validate_reports_broken_pack_errors(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
             root = init_org_pack(Path(tmp), "acme")
@@ -468,6 +500,7 @@ class RepoRegistryTests(unittest.TestCase):
     def cli_env(self) -> dict[str, str]:
         env = os.environ.copy()
         env["PYTHONPATH"] = str(Path.cwd() / "src")
+        env["ORGS_AI_HARNESS_SKILL_GENERATOR"] = "template"
         return env
 
     def cli_env_with_fake_gh(self, fake_bin: Path) -> dict[str, str]:
@@ -618,6 +651,46 @@ class RepoRegistryTests(unittest.TestCase):
             self.assertNotEqual(add_result.returncode, 0)
             self.assertIn("repo path does not exist", add_result.stderr)
 
+    def test_cli_repo_discover_bootstraps_pack_from_github_profile_url(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            tmp_path = Path(tmp)
+            fake_bin = tmp_path / "fake-bin"
+            payload = (
+                '[{"name":"orgs-ai-harness","owner":{"login":"ametel01"},'
+                '"url":"https://github.com/ametel01/orgs-ai-harness",'
+                '"defaultBranchRef":{"name":"main"},"visibility":"PUBLIC",'
+                '"isArchived":false,"isFork":false,"description":"Harness"}]'
+            )
+            self.write_fake_gh(fake_bin, payload, target="ametel01")
+
+            discover_result = subprocess.run(
+                [
+                    sys.executable,
+                    "-m",
+                    "orgs_ai_harness",
+                    "repo",
+                    "discover",
+                    "https://github.com/ametel01",
+                    "--select",
+                    "orgs-ai-harness",
+                ],
+                cwd=tmp,
+                env=self.cli_env_with_fake_gh(fake_bin),
+                text=True,
+                capture_output=True,
+                check=False,
+            )
+
+            self.assertEqual(discover_result.returncode, 0, discover_result.stderr)
+            self.assertIn("Initialized org skill pack for GitHub owner ametel01", discover_result.stdout)
+            root = tmp_path / DEFAULT_PACK_DIR
+            config = load_harness_config(root / "harness.yml")
+            entries = load_repo_entries(root / "harness.yml")
+            self.assertEqual(config.org_name, "ametel01")
+            self.assertEqual(len(entries), 1)
+            self.assertEqual(entries[0].id, "orgs-ai-harness")
+            self.assertEqual(entries[0].owner, "ametel01")
+
     def test_cli_repo_discover_org_registers_only_selected_repo(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
             tmp_path = Path(tmp)
@@ -665,6 +738,62 @@ class RepoRegistryTests(unittest.TestCase):
             self.assertEqual(entries[0].default_branch, "main")
             self.assertTrue(validate_org_pack(root).ok)
 
+    def test_cli_repo_discover_reuses_already_registered_selected_repo(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            tmp_path = Path(tmp)
+            init_org_pack(tmp_path, "acme")
+            payload = (
+                '[{"name":"api-service","owner":{"login":"acme"},'
+                '"url":"https://github.com/acme/api-service",'
+                '"defaultBranchRef":{"name":"main"},"visibility":"PRIVATE",'
+                '"isArchived":false,"isFork":false,"description":"Core API"}]'
+            )
+            fake_bin = tmp_path / "fake-bin"
+            self.write_fake_gh(fake_bin, payload)
+
+            first_result = subprocess.run(
+                [
+                    sys.executable,
+                    "-m",
+                    "orgs_ai_harness",
+                    "repo",
+                    "discover",
+                    "--github-org",
+                    "acme",
+                    "--select",
+                    "api-service",
+                ],
+                cwd=tmp,
+                env=self.cli_env_with_fake_gh(fake_bin),
+                text=True,
+                capture_output=True,
+                check=False,
+            )
+            second_result = subprocess.run(
+                [
+                    sys.executable,
+                    "-m",
+                    "orgs_ai_harness",
+                    "repo",
+                    "discover",
+                    "--github-org",
+                    "acme",
+                    "--select",
+                    "api-service",
+                ],
+                cwd=tmp,
+                env=self.cli_env_with_fake_gh(fake_bin),
+                text=True,
+                capture_output=True,
+                check=False,
+            )
+
+            self.assertEqual(first_result.returncode, 0, first_result.stderr)
+            self.assertEqual(second_result.returncode, 0, second_result.stderr)
+            self.assertIn("already registered", second_result.stdout)
+            entries = load_repo_entries(tmp_path / DEFAULT_PACK_DIR / "harness.yml")
+            self.assertEqual(len(entries), 1)
+
     def test_cli_repo_discover_user_reuses_selection_path(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
             tmp_path = Path(tmp)
@@ -705,6 +834,167 @@ class RepoRegistryTests(unittest.TestCase):
             self.assertEqual(entries[0].owner, "alexmetelli")
             self.assertEqual(entries[0].url, "https://github.com/alexmetelli/cli-tools")
             self.assertTrue(validate_org_pack(root).ok)
+
+    def test_cli_repo_discover_github_profile_url_infers_target(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            tmp_path = Path(tmp)
+            init_org_pack(tmp_path, "acme")
+            payload = (
+                '[{"name":"cli-tools","owner":{"login":"ametel01"},'
+                '"url":"https://github.com/ametel01/cli-tools",'
+                '"defaultBranchRef":{"name":"main"},"visibility":"PUBLIC",'
+                '"isArchived":false,"isFork":false,"description":"CLI helpers"}]'
+            )
+            fake_bin = tmp_path / "fake-bin"
+            self.write_fake_gh(fake_bin, payload, target="ametel01")
+
+            discover_result = subprocess.run(
+                [
+                    sys.executable,
+                    "-m",
+                    "orgs_ai_harness",
+                    "repo",
+                    "discover",
+                    "https://github.com/ametel01",
+                    "--select",
+                    "cli-tools",
+                ],
+                cwd=tmp,
+                env=self.cli_env_with_fake_gh(fake_bin),
+                text=True,
+                capture_output=True,
+                check=False,
+            )
+
+            self.assertEqual(discover_result.returncode, 0, discover_result.stderr)
+            root = tmp_path / DEFAULT_PACK_DIR
+            entries = load_repo_entries(root / "harness.yml")
+            self.assertEqual(len(entries), 1)
+            self.assertEqual(entries[0].id, "cli-tools")
+            self.assertEqual(entries[0].owner, "ametel01")
+            self.assertEqual(entries[0].url, "https://github.com/ametel01/cli-tools")
+
+    def test_cli_setup_github_profile_bootstraps_and_generates_global_skill(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            tmp_path = Path(tmp)
+            payload = (
+                '[{"name":"cli-tools","owner":{"login":"ametel01"},'
+                '"url":"https://github.com/ametel01/cli-tools",'
+                '"defaultBranchRef":{"name":"main"},"visibility":"PUBLIC",'
+                '"isArchived":false,"isFork":false,"description":"CLI helpers"}]'
+            )
+            fake_bin = tmp_path / "fake-bin"
+            self.write_fake_gh(fake_bin, payload, target="ametel01")
+
+            setup_result = subprocess.run(
+                [
+                    sys.executable,
+                    "-m",
+                    "orgs_ai_harness",
+                    "setup",
+                    "https://github.com/ametel01",
+                ],
+                cwd=tmp,
+                env=self.cli_env_with_fake_gh(fake_bin),
+                input="1\nn\nglobal\n",
+                text=True,
+                capture_output=True,
+                check=False,
+            )
+
+            self.assertEqual(setup_result.returncode, 0, setup_result.stderr)
+            self.assertIn("Initialized org skill pack for GitHub owner ametel01", setup_result.stdout)
+            self.assertIn("Generated global org skill", setup_result.stdout)
+            root = tmp_path / DEFAULT_PACK_DIR
+            entries = load_repo_entries(root / "harness.yml")
+            self.assertEqual(len(entries), 1)
+            self.assertEqual(entries[0].id, "cli-tools")
+            self.assertEqual(entries[0].owner, "ametel01")
+            self.assertTrue((root / "org" / "skills" / "org-repository-map" / "SKILL.md").is_file())
+            self.assertTrue(
+                (root / "org" / "skills" / "org-repository-map" / "references" / "repositories.md").is_file()
+            )
+
+    def test_discovery_interactive_selection_accepts_numbers_and_names(self) -> None:
+        repos = (
+            DiscoveredRepo(
+                id="api-service",
+                name="api-service",
+                owner="acme",
+                url="https://github.com/acme/api-service",
+                default_branch="main",
+                visibility="PRIVATE",
+                archived=False,
+                fork=False,
+                description=None,
+            ),
+            DiscoveredRepo(
+                id="web-app",
+                name="web-app",
+                owner="acme",
+                url="https://github.com/acme/web-app",
+                default_branch="main",
+                visibility="PUBLIC",
+                archived=False,
+                fork=False,
+                description=None,
+            ),
+        )
+        output = io.StringIO()
+
+        selected = select_discovered_repos_interactively(
+            repos,
+            input_stream=io.StringIO("1,web-app\n"),
+            output_stream=output,
+        )
+
+        self.assertEqual([repo.id for repo in selected], ["api-service", "web-app"])
+        self.assertIn("Discovered repositories", output.getvalue())
+        self.assertIn("1. api-service", output.getvalue())
+
+    def test_discovery_checkbox_selection_uses_space_and_arrows(self) -> None:
+        repos = (
+            DiscoveredRepo(
+                id="api-service",
+                name="api-service",
+                owner="acme",
+                url="https://github.com/acme/api-service",
+                default_branch="main",
+                visibility="PRIVATE",
+                archived=False,
+                fork=False,
+                description=None,
+            ),
+            DiscoveredRepo(
+                id="web-app",
+                name="web-app",
+                owner="acme",
+                url="https://github.com/acme/web-app",
+                default_branch="main",
+                visibility="PUBLIC",
+                archived=False,
+                fork=False,
+                description=None,
+            ),
+        )
+        output = io.StringIO()
+        keys = iter(("toggle", "down", "toggle", "enter"))
+
+        selected = _run_checkbox_selector(
+            repos,
+            read_key=lambda: next(keys),
+            output_stream=output,
+            terminal_lines=12,
+        )
+
+        self.assertEqual([repo.id for repo in selected], ["api-service", "web-app"])
+        self.assertIn("Space to toggle", output.getvalue())
+        self.assertIn("[x] 1. api-service", output.getvalue())
+
+    def test_infer_github_owner_accepts_profile_url_and_bare_owner(self) -> None:
+        self.assertEqual(infer_github_owner("https://github.com/ametel01"), "ametel01")
+        self.assertEqual(infer_github_owner("github.com/acme"), "acme")
+        self.assertEqual(infer_github_owner("acme"), "acme")
 
     def test_cli_repo_discover_rejects_org_and_user_together(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
@@ -1022,6 +1312,58 @@ class RepoRegistryTests(unittest.TestCase):
             root = tmp_path / DEFAULT_PACK_DIR
             entries = load_repo_entries(root / "harness.yml")
             self.assertEqual(entries[0].local_path, "../covered-repos/api-service")
+
+    def test_cli_repo_discover_clone_skips_existing_destination_and_continues(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            tmp_path = Path(tmp)
+            init_org_pack(tmp_path, "acme")
+            existing_repo = tmp_path / "covered-repos" / "api-service"
+            existing_repo.mkdir(parents=True)
+            payload = (
+                '[{"name":"api-service","owner":{"login":"acme"},'
+                '"url":"https://github.com/acme/api-service",'
+                '"defaultBranchRef":{"name":"main"},"visibility":"PRIVATE",'
+                '"isArchived":false,"isFork":false,"description":null},'
+                '{"name":"web-app","owner":{"login":"acme"},'
+                '"url":"https://github.com/acme/web-app",'
+                '"defaultBranchRef":{"name":"main"},"visibility":"PUBLIC",'
+                '"isArchived":false,"isFork":false,"description":null}]'
+            )
+            fake_bin = tmp_path / "fake-bin"
+            clone_log = tmp_path / "clone.log"
+            self.write_fake_gh(fake_bin, payload)
+            self.write_fake_git(fake_bin, clone_log)
+
+            discover_result = subprocess.run(
+                [
+                    sys.executable,
+                    "-m",
+                    "orgs_ai_harness",
+                    "repo",
+                    "discover",
+                    "--github-org",
+                    "acme",
+                    "--select",
+                    "api-service,web-app",
+                    "--clone",
+                    "--clone-dir",
+                    "./covered-repos",
+                ],
+                cwd=tmp,
+                env=self.cli_env_with_fake_gh(fake_bin),
+                text=True,
+                capture_output=True,
+                check=False,
+            )
+
+            self.assertEqual(discover_result.returncode, 0, discover_result.stderr)
+            self.assertIn("warning: clone destination already exists for api-service", discover_result.stdout)
+            clone_log_text = clone_log.read_text(encoding="utf-8")
+            self.assertNotIn("https://github.com/acme/api-service", clone_log_text)
+            self.assertIn("https://github.com/acme/web-app", clone_log_text)
+            entries = {entry.id: entry for entry in load_repo_entries(tmp_path / DEFAULT_PACK_DIR / "harness.yml")}
+            self.assertEqual(entries["api-service"].local_path, "../covered-repos/api-service")
+            self.assertEqual(entries["web-app"].local_path, "../covered-repos/web-app")
 
     def test_cli_repo_discover_missing_gh_reports_setup_message_without_mutation(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
@@ -1831,6 +2173,7 @@ class RepoOnboardingTests(unittest.TestCase):
     def cli_env(self) -> dict[str, str]:
         env = os.environ.copy()
         env["PYTHONPATH"] = str(Path.cwd() / "src")
+        env["ORGS_AI_HARNESS_SKILL_GENERATOR"] = "template"
         return env
 
     def run_cli(self, cwd: Path, *args: str) -> subprocess.CompletedProcess[str]:
@@ -1838,6 +2181,17 @@ class RepoOnboardingTests(unittest.TestCase):
             [sys.executable, "-m", "orgs_ai_harness", *args],
             cwd=cwd,
             env=self.cli_env(),
+            text=True,
+            capture_output=True,
+            check=False,
+        )
+
+    def run_cli_with_input(self, cwd: Path, args: tuple[str, ...], input_text: str) -> subprocess.CompletedProcess[str]:
+        return subprocess.run(
+            [sys.executable, "-m", "orgs_ai_harness", *args],
+            cwd=cwd,
+            env=self.cli_env(),
+            input=input_text,
             text=True,
             capture_output=True,
             check=False,
@@ -2028,6 +2382,196 @@ class RepoOnboardingTests(unittest.TestCase):
 
             self.assertEqual(validate_result.returncode, 0, validate_result.stderr)
             self.assertIn("Validation passed for fixture-repo", validate_result.stdout)
+
+    def test_cli_onboard_can_generate_skills_with_codex_cli(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            tmp_path = Path(tmp)
+            create_basic_fixture_repo(tmp_path)
+            init_org_pack(tmp_path, "acme")
+            self.assertEqual(self.run_cli(tmp_path, "repo", "add", "fixture-repo").returncode, 0)
+            fake_bin = tmp_path / "fake-bin"
+            fake_bin.mkdir()
+            codex_path = fake_bin / "codex"
+            codex_path.write_text(
+                "#!/usr/bin/env python3\n"
+                "from pathlib import Path\n"
+                "import sys\n"
+                "targets = []\n"
+                "for index, value in enumerate(sys.argv):\n"
+                "    if value == '--add-dir' and index + 1 < len(sys.argv):\n"
+                "        path = Path(sys.argv[index + 1])\n"
+                "        if path.name == 'skills':\n"
+                "            targets.append(path)\n"
+                "for target in targets:\n"
+                "    for name in ('repo-test-workflow', 'repo-navigation'):\n"
+                "        root = target / name\n"
+                "        root.mkdir(parents=True, exist_ok=True)\n"
+                "        (root / 'SKILL.md').write_text(\n"
+                "            '---\\n'\n"
+                "            f'name: {name}\\n'\n"
+                "            f'description: Full LLM-generated guidance for {name}. Use when working in this repo.\\n'\n"
+                "            '---\\n\\n'\n"
+                "            f'# {name}\\n\\nUse repository evidence for this workflow.\\n',\n"
+                "            encoding='utf-8',\n"
+                "        )\n",
+                encoding="utf-8",
+            )
+            codex_path.chmod(0o755)
+            env = self.cli_env()
+            env["PATH"] = f"{fake_bin}{os.pathsep}{env['PATH']}"
+
+            onboard_result = subprocess.run(
+                [sys.executable, "-m", "orgs_ai_harness", "onboard", "fixture-repo", "--llm", "codex"],
+                cwd=tmp,
+                env=env,
+                text=True,
+                capture_output=True,
+                check=False,
+            )
+
+            self.assertEqual(onboard_result.returncode, 0, onboard_result.stderr)
+            artifact_root = tmp_path / DEFAULT_PACK_DIR / "repos" / "fixture-repo"
+            self.assertTrue((artifact_root / "llm-skill-generation-prompt.md").is_file())
+            self.assertIn(
+                "Full LLM-generated guidance",
+                (artifact_root / "skills" / "repo-test-workflow" / "SKILL.md").read_text(encoding="utf-8"),
+            )
+            self.assertTrue((tmp_path / "fixture-repo" / ".agents" / "skills" / "repo-test-workflow" / "SKILL.md").is_file())
+            validate_result = self.run_cli(tmp_path, "validate", "fixture-repo")
+            self.assertEqual(validate_result.returncode, 0, validate_result.stderr)
+
+    def test_cli_onboard_codex_failure_points_to_full_log(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            tmp_path = Path(tmp)
+            create_basic_fixture_repo(tmp_path)
+            init_org_pack(tmp_path, "acme")
+            self.assertEqual(self.run_cli(tmp_path, "repo", "add", "fixture-repo").returncode, 0)
+            fake_bin = tmp_path / "fake-bin"
+            fake_bin.mkdir()
+            codex_path = fake_bin / "codex"
+            codex_path.write_text(
+                "#!/usr/bin/env python3\n"
+                "import sys\n"
+                "print('analyzing repository before failure')\n"
+                "sys.exit(7)\n",
+                encoding="utf-8",
+            )
+            codex_path.chmod(0o755)
+            env = self.cli_env()
+            env["PATH"] = f"{fake_bin}{os.pathsep}{env['PATH']}"
+
+            onboard_result = subprocess.run(
+                [sys.executable, "-m", "orgs_ai_harness", "onboard", "fixture-repo", "--llm", "codex"],
+                cwd=tmp,
+                env=env,
+                text=True,
+                capture_output=True,
+                check=False,
+            )
+
+            self.assertEqual(onboard_result.returncode, 1)
+            artifact_root = tmp_path / DEFAULT_PACK_DIR / "repos" / "fixture-repo"
+            log_path = artifact_root / "llm-skill-generation.log"
+            self.assertIn(str(log_path), onboard_result.stderr)
+            self.assertIn("Last output", onboard_result.stderr)
+            self.assertIn("analyzing repository before failure", log_path.read_text(encoding="utf-8"))
+
+    def test_cli_setup_local_generates_project_specific_skills(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            tmp_path = Path(tmp)
+            create_basic_fixture_repo(tmp_path)
+
+            setup_result = self.run_cli_with_input(
+                tmp_path,
+                ("setup", "local", "--llm", "template"),
+                "acme\n"
+                "fixture-repo\n"
+                "\n"
+                "\n"
+                "\n"
+                "\n"
+                "1\n"
+                "n\n"
+                "n\n"
+                "n\n",
+            )
+
+            self.assertEqual(setup_result.returncode, 0, setup_result.stderr)
+            self.assertIn("Initialized org skill pack", setup_result.stdout)
+            self.assertIn("Generated draft pack for repo fixture-repo", setup_result.stdout)
+            root = tmp_path / DEFAULT_PACK_DIR
+            artifact_root = root / "repos" / "fixture-repo"
+            entries = load_repo_entries(root / "harness.yml")
+            self.assertEqual(entries[0].coverage_status, "draft")
+            self.assertTrue((artifact_root / "skills" / "build-test-debug" / "SKILL.md").is_file())
+            self.assertTrue((artifact_root / "evals" / "onboarding.yml").is_file())
+
+    def test_cli_setup_global_codex_installs_skills_in_home_not_project(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            tmp_path = Path(tmp)
+            fake_home = tmp_path / "home"
+            fake_home.mkdir()
+            fake_bin = tmp_path / "fake-bin"
+            fake_bin.mkdir()
+            codex_path = fake_bin / "codex"
+            codex_path.write_text(
+                "#!/usr/bin/env python3\n"
+                "from pathlib import Path\n"
+                "import sys\n"
+                "targets = []\n"
+                "for index, value in enumerate(sys.argv):\n"
+                "    if value == '--add-dir' and index + 1 < len(sys.argv):\n"
+                "        path = Path(sys.argv[index + 1])\n"
+                "        if path.name == 'skills':\n"
+                "            targets.append(path)\n"
+                "for target in targets:\n"
+                "    root = target / 'org-repository-routing'\n"
+                "    root.mkdir(parents=True, exist_ok=True)\n"
+                "    (root / 'SKILL.md').write_text(\n"
+                "        '---\\n'\n"
+                "        'name: org-repository-routing\\n'\n"
+                "        'description: Route org-level repository questions to the smallest relevant repo skill.\\n'\n"
+                "        '---\\n\\n'\n"
+                "        '# org-repository-routing\\n\\nUse registered repository metadata.\\n',\n"
+                "        encoding='utf-8',\n"
+                "    )\n",
+                encoding="utf-8",
+            )
+            codex_path.chmod(0o755)
+            env = self.cli_env()
+            env["HOME"] = str(fake_home)
+            env["PATH"] = f"{fake_bin}{os.pathsep}{env['PATH']}"
+
+            setup_result = subprocess.run(
+                [
+                    sys.executable,
+                    "-m",
+                    "orgs_ai_harness",
+                    "setup",
+                    "local",
+                    "--llm",
+                    "codex",
+                    "--skill-target",
+                    "both",
+                ],
+                cwd=tmp,
+                env=env,
+                input="acme\n\n2\n",
+                text=True,
+                capture_output=True,
+                check=False,
+            )
+
+            self.assertEqual(setup_result.returncode, 0, setup_result.stderr)
+            self.assertTrue(
+                (fake_home / ".agents" / "skills" / "org-repository-routing" / "SKILL.md").is_file()
+            )
+            self.assertTrue(
+                (fake_home / ".claude" / "skills" / "org-repository-routing" / "SKILL.md").is_file()
+            )
+            self.assertFalse((tmp_path / ".agents" / "skills" / "org-repository-routing" / "SKILL.md").exists())
+            self.assertFalse((tmp_path / ".claude" / "skills" / "org-repository-routing" / "SKILL.md").exists())
+            self.assertIn("Installed global org skills at", setup_result.stdout)
 
     def test_cli_approve_all_transitions_to_approved_unverified_and_traces(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:

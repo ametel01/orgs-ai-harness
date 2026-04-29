@@ -4,8 +4,15 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 import json
+import os
 from pathlib import Path
+import queue
+import re
+import shutil
 import subprocess
+import sys
+import threading
+import time
 
 from orgs_ai_harness.repo_registry import RepoEntry, load_repo_entries, update_repo_coverage_status
 
@@ -27,6 +34,12 @@ class OnboardingResult:
     pack_report_path: Path | None = None
 
 
+@dataclass(frozen=True)
+class LlmCommandResult:
+    returncode: int
+    tail: str
+
+
 SAFE_EVIDENCE_FILES = {
     "README.md": "readme",
     "README": "readme",
@@ -44,6 +57,8 @@ SAFE_EVIDENCE_FILES = {
 }
 SENSITIVE_SUFFIXES = (".pem", ".key", ".p12", ".pfx")
 SENSITIVE_NAME_PARTS = ("credential", "credentials", "secret", "secrets", "token", "tokens")
+PROJECT_ROOT = Path(__file__).resolve().parents[2]
+SINGLE_REPO_SKILL_PROMPT_PATH = PROJECT_ROOT / "local-docs" / "SINGLE_REPO_SKILL_BUILD.md"
 
 
 def scan_repo_only(root: Path, repo_id: str) -> OnboardingResult:
@@ -97,7 +112,13 @@ def scan_repo_only(root: Path, repo_id: str) -> OnboardingResult:
     )
 
 
-def onboard_repo(root: Path, repo_id: str) -> OnboardingResult:
+def onboard_repo(
+    root: Path,
+    repo_id: str,
+    *,
+    skill_generator: str = "codex",
+    skill_target: str = "codex",
+) -> OnboardingResult:
     """Generate a draft skill pack for one selected local repository."""
 
     scan_result = scan_repo_only(root, repo_id)
@@ -110,15 +131,29 @@ def onboard_repo(root: Path, repo_id: str) -> OnboardingResult:
 
     skill_specs = _skill_specs_for(entry, hypothesis_map)
     skills_root = artifact_root / "skills"
-    for spec in skill_specs:
-        skill_root = skills_root / spec["name"]
-        references_root = skill_root / "references"
-        references_root.mkdir(parents=True, exist_ok=True)
-        (skill_root / "SKILL.md").write_text(_render_skill(spec), encoding="utf-8")
-        (references_root / "repo-evidence.md").write_text(
-            _render_skill_reference(entry, spec, hypothesis_map),
-            encoding="utf-8",
+    generator = skill_generator.strip().lower()
+    target = skill_target.strip().lower()
+    if generator == "template":
+        for spec in skill_specs:
+            skill_root = skills_root / spec["name"]
+            references_root = skill_root / "references"
+            references_root.mkdir(parents=True, exist_ok=True)
+            (skill_root / "SKILL.md").write_text(_render_skill(spec), encoding="utf-8")
+            (references_root / "repo-evidence.md").write_text(
+                _render_skill_reference(entry, spec, hypothesis_map),
+                encoding="utf-8",
+            )
+    elif generator in {"codex", "claude"}:
+        skill_specs = _generate_skills_with_llm(
+            root,
+            entry,
+            artifact_root,
+            scan_result,
+            generator=generator,
+            skill_target=target,
         )
+    else:
+        raise RepoOnboardingError(f"unsupported skill generator: {skill_generator}")
 
     resolvers_path = artifact_root / "resolvers.yml"
     evals_root = artifact_root / "evals"
@@ -183,7 +218,7 @@ def onboard_repo(root: Path, repo_id: str) -> OnboardingResult:
     ]
     scan_result.unknowns_path.write_text(json.dumps(unknowns_artifact, indent=2) + "\n", encoding="utf-8")
     pack_report_path.write_text(
-        _render_pack_report(entry, skill_specs, unknowns, scanned),
+        _render_pack_report(entry, skill_specs, unknowns, scanned, skill_generator=generator),
         encoding="utf-8",
     )
     update_repo_coverage_status(root, entry.id, "draft")
@@ -431,26 +466,387 @@ def _render_skill_reference(entry: RepoEntry, spec: dict[str, object], hypothesi
     return "\n".join(lines) + "\n"
 
 
+def _generate_skills_with_llm(
+    root: Path,
+    entry: RepoEntry,
+    artifact_root: Path,
+    scan_result: OnboardingResult,
+    *,
+    generator: str,
+    skill_target: str,
+) -> list[dict[str, object]]:
+    repo_path = _resolve_repo_path(root, entry)
+    target_roots = _repo_skill_target_roots(repo_path, skill_target)
+    for target_root in target_roots:
+        target_root.mkdir(parents=True, exist_ok=True)
+    staging_roots = _repo_skill_staging_roots(artifact_root, skill_target)
+    for staging_root in staging_roots:
+        if staging_root.exists():
+            shutil.rmtree(staging_root)
+        staging_root.mkdir(parents=True, exist_ok=True)
+    prompt_path = artifact_root / "llm-skill-generation-prompt.md"
+    prompt_path.write_text(
+        _render_llm_skill_prompt(
+            root,
+            entry,
+            repo_path,
+            artifact_root,
+            scan_result,
+            staging_roots,
+            target_roots,
+            generator,
+        ),
+        encoding="utf-8",
+    )
+    log_path = artifact_root / "llm-skill-generation.log"
+    command = _llm_skill_generation_command(generator, repo_path, (artifact_root, *staging_roots), prompt_path)
+    result = _run_llm_command_with_progress(
+        command,
+        cwd=repo_path,
+        log_path=log_path,
+        label=f"{generator} repo skill generation for {entry.id}",
+    )
+    if result.returncode != 0:
+        message = result.tail or "LLM command failed without output"
+        raise RepoOnboardingError(
+            f"{generator} skill generation failed for {entry.id}. See log: {log_path}. Last output: {message}"
+        )
+    skill_specs = _ensure_llm_skill_outputs(staging_roots, generator, result.tail, log_path)
+    _snapshot_generated_repo_skills(staging_roots[0], artifact_root)
+    _repair_generated_skill_references(artifact_root)
+    _install_generated_skills(staging_roots[0], target_roots)
+    return skill_specs
+
+
+def _llm_skill_generation_command(
+    generator: str,
+    repo_path: Path,
+    writable_roots: tuple[Path, ...],
+    prompt_path: Path,
+) -> list[str]:
+    prompt = prompt_path.read_text(encoding="utf-8")
+    if generator == "codex":
+        executable = shutil.which("codex")
+        if executable is None:
+            raise RepoOnboardingError("codex CLI is required for --llm codex but was not found on PATH")
+        command = [
+            executable,
+            "exec",
+            "--cd",
+            str(repo_path),
+            "--dangerously-bypass-approvals-and-sandbox",
+        ]
+        for writable_root in writable_roots:
+            command.extend(["--add-dir", str(writable_root)])
+        command.append(prompt)
+        return command
+    if generator == "claude":
+        executable = shutil.which("claude")
+        if executable is None:
+            raise RepoOnboardingError("Claude Code CLI is required for --llm claude but was not found on PATH")
+        command = [
+            executable,
+            "--print",
+            "--permission-mode",
+            "bypassPermissions",
+        ]
+        for writable_root in (repo_path, *writable_roots):
+            command.extend(["--add-dir", str(writable_root)])
+        command.append(prompt)
+        return command
+    raise RepoOnboardingError(f"unsupported skill generator: {generator}")
+
+
+def _render_llm_skill_prompt(
+    root: Path,
+    entry: RepoEntry,
+    repo_path: Path,
+    artifact_root: Path,
+    scan_result: OnboardingResult,
+    staging_roots: tuple[Path, ...],
+    target_roots: tuple[Path, ...],
+    generator: str,
+) -> str:
+    base_prompt = _read_prompt_file(SINGLE_REPO_SKILL_PROMPT_PATH)
+    staging_list = "\n".join(f"- {path}" for path in staging_roots)
+    target_list = "\n".join(f"- {path}" for path in target_roots)
+    return f"""{base_prompt}
+
+Additional harness constraints:
+
+Generation staging targets:
+{staging_list}
+
+Final runtime install targets:
+{target_list}
+
+Write generated repository-level skills only under every generation staging target listed above.
+Do not write generated repository-level skills directly to the final runtime install targets.
+After validation, the harness will install the validated generated skills into the final runtime install targets.
+
+You may read the source repository here:
+{repo_path}
+
+You may write only to the listed generation staging targets and to this harness artifact directory for prompt/report files:
+{artifact_root}
+
+Repository:
+- repo_id: {entry.id}
+- name: {entry.name}
+- owner: {entry.owner or "unknown"}
+- url: {entry.url or "unknown"}
+- local_path: {entry.local_path or "unknown"}
+- default_branch: {entry.default_branch or "unknown"}
+- generator: {generator}
+
+Available scan artifacts:
+- {scan_result.summary_path}
+- {scan_result.unknowns_path}
+- {scan_result.scan_manifest_path}
+- {scan_result.hypothesis_map_path}
+
+Additional skill-shaping constraints:
+- Prefer many small, specialized skills over a few broad general skills.
+- Each skill must have highly specific `name` and `description` metadata so agents can select it without loading excess context.
+- Descriptions must be trigger-focused and concrete, not marketing summaries.
+- Avoid broad catch-all skills such as `repo-architecture` unless the repository truly has a narrow architecture workflow that needs it.
+- Create the smallest useful skill set for this repo, normally 3-8 targeted skills.
+- If multiple generation staging targets are listed, write the same generated skill set to each target.
+"""
+
+
+def _ensure_llm_skill_outputs(
+    target_roots: tuple[Path, ...],
+    generator: str,
+    output_tail: str,
+    log_path: Path,
+) -> list[dict[str, object]]:
+    specs_by_root = [_discover_skill_specs(root) for root in target_roots]
+    missing_roots = [str(root) for root, specs in zip(target_roots, specs_by_root) if not specs]
+    first_specs = specs_by_root[0] if specs_by_root else []
+    malformed = []
+    if not first_specs:
+        malformed.append("no skill directories generated")
+    expected_names = {str(spec["name"]) for spec in first_specs}
+    for root, specs in zip(target_roots[1:], specs_by_root[1:]):
+        names = {str(spec["name"]) for spec in specs}
+        if names != expected_names:
+            malformed.append(f"{root} generated skill set differs from first target")
+    if missing_roots or malformed:
+        details = []
+        if missing_roots:
+            details.append("missing skills under " + ", ".join(missing_roots))
+        if malformed:
+            details.append("malformed " + ", ".join(malformed))
+        output = output_tail.strip()[:600]
+        suffix = f"; last output: {output}" if output else ""
+        raise RepoOnboardingError(
+            f"{generator} did not produce valid skill files: {'; '.join(details)}. See log: {log_path}{suffix}"
+        )
+    return first_specs
+
+
+def _run_llm_command_with_progress(command: list[str], *, cwd: Path, log_path: Path, label: str) -> LlmCommandResult:
+    log_path.parent.mkdir(parents=True, exist_ok=True)
+    print(f"{label}: started. Log: {log_path}", file=sys.stderr)
+    tail_lines: list[str] = []
+    env = os.environ.copy()
+    env["PYTHONUNBUFFERED"] = "1"
+    with log_path.open("w", encoding="utf-8") as log:
+        process = subprocess.Popen(
+            command,
+            cwd=cwd,
+            text=True,
+            stdout=subprocess.PIPE,
+            stderr=subprocess.STDOUT,
+            env=env,
+            bufsize=1,
+        )
+        assert process.stdout is not None
+        output_queue: queue.Queue[str] = queue.Queue()
+        reader = threading.Thread(target=_enqueue_process_output, args=(process.stdout, output_queue), daemon=True)
+        reader.start()
+        last_progress = time.monotonic()
+        while process.poll() is None or not output_queue.empty():
+            try:
+                line = output_queue.get(timeout=1)
+            except queue.Empty:
+                now = time.monotonic()
+                if now - last_progress > 30:
+                    print(f"{label}: still running. Log: {log_path}", file=sys.stderr)
+                    last_progress = now
+                continue
+            log.write(line)
+            log.flush()
+            stripped = line.strip()
+            if stripped:
+                tail_lines.append(stripped)
+                tail_lines = tail_lines[-20:]
+                if _is_progress_line(stripped):
+                    print(f"{label}: {stripped[:180]}", file=sys.stderr)
+                    last_progress = time.monotonic()
+        returncode = process.wait()
+        reader.join(timeout=1)
+    print(f"{label}: {'completed' if returncode == 0 else f'failed with exit {returncode}'}. Log: {log_path}", file=sys.stderr)
+    return LlmCommandResult(returncode=returncode, tail="\n".join(tail_lines[-10:]))
+
+
+def _enqueue_process_output(stream, output_queue: queue.Queue[str]) -> None:
+    try:
+        for line in stream:
+            output_queue.put(line)
+    finally:
+        stream.close()
+
+
+def _is_progress_line(line: str) -> bool:
+    lowered = line.lower()
+    markers = (
+        "thinking",
+        "analy",
+        "read",
+        "edit",
+        "write",
+        "created",
+        "updated",
+        "generated",
+        "validation",
+        "running",
+        "completed",
+        "error",
+    )
+    return any(marker in lowered for marker in markers)
+
+
+def _discover_skill_specs(skills_root: Path) -> list[dict[str, object]]:
+    specs: list[dict[str, object]] = []
+    if not skills_root.is_dir():
+        return specs
+    for skill_root in sorted(path for path in skills_root.iterdir() if path.is_dir()):
+        skill_path = skill_root / "SKILL.md"
+        if not skill_path.is_file():
+            continue
+        text = skill_path.read_text(encoding="utf-8")
+        frontmatter = _parse_simple_frontmatter(text)
+        name = frontmatter.get("name")
+        description = frontmatter.get("description")
+        if name != skill_root.name or not _is_valid_skill_name(skill_root.name) or not description:
+            continue
+        specs.append(
+            {
+                "name": skill_root.name,
+                "description": description,
+                "summary": description,
+                "triggers": _description_keywords(description),
+            }
+        )
+    return specs
+
+
+def _snapshot_generated_repo_skills(source_skills_root: Path, artifact_root: Path) -> None:
+    target = artifact_root / "skills"
+    if target.exists():
+        shutil.rmtree(target)
+    shutil.copytree(source_skills_root, target)
+
+
+def _install_generated_skills(source_skills_root: Path, target_roots: tuple[Path, ...]) -> None:
+    skill_roots = [path for path in sorted(source_skills_root.iterdir()) if path.is_dir() and (path / "SKILL.md").is_file()]
+    for target_root in target_roots:
+        target_root.mkdir(parents=True, exist_ok=True)
+        for skill_root in skill_roots:
+            destination = target_root / skill_root.name
+            if destination.exists():
+                shutil.rmtree(destination)
+            shutil.copytree(skill_root, destination)
+
+
+def _repair_generated_skill_references(artifact_root: Path) -> None:
+    evidence_source = artifact_root / "scan" / "hypothesis-map.yml"
+    if not evidence_source.is_file():
+        return
+    for skill_path in (artifact_root / "skills").glob("*/SKILL.md"):
+        text = skill_path.read_text(encoding="utf-8")
+        if "references/repo-evidence.md" not in text:
+            continue
+        evidence_target = skill_path.parent / "references" / "repo-evidence.md"
+        if evidence_target.is_file():
+            continue
+        evidence_target.parent.mkdir(parents=True, exist_ok=True)
+        evidence_target.write_text(
+            "# Repo Evidence\n\n"
+            "This file was generated by the harness because SKILL.md references "
+            "`references/repo-evidence.md`.\n\n"
+            f"See the scan hypothesis map at `../../scan/{evidence_source.name}`.\n",
+            encoding="utf-8",
+        )
+
+
+def _repo_skill_target_roots(repo_path: Path, skill_target: str) -> tuple[Path, ...]:
+    normalized = skill_target.strip().lower()
+    if normalized == "codex":
+        return (repo_path / ".agents" / "skills",)
+    if normalized == "claude":
+        return (repo_path / ".claude" / "skills",)
+    if normalized == "both":
+        return (repo_path / ".agents" / "skills", repo_path / ".claude" / "skills")
+    raise RepoOnboardingError(f"unsupported skill target: {skill_target}")
+
+
+def _repo_skill_staging_roots(artifact_root: Path, skill_target: str) -> tuple[Path, ...]:
+    normalized = skill_target.strip().lower()
+    base = artifact_root / "llm-output"
+    if normalized == "codex":
+        return (base / "codex" / "skills",)
+    if normalized == "claude":
+        return (base / "claude" / "skills",)
+    if normalized == "both":
+        return (base / "codex" / "skills", base / "claude" / "skills")
+    raise RepoOnboardingError(f"unsupported skill target: {skill_target}")
+
+
+def _read_prompt_file(path: Path) -> str:
+    if not path.is_file():
+        raise RepoOnboardingError(f"skill generation prompt file is missing: {path}")
+    text = path.read_text(encoding="utf-8").strip()
+    if not text:
+        raise RepoOnboardingError(f"skill generation prompt file is empty: {path}")
+    return text
+
+
+def _parse_simple_frontmatter(text: str) -> dict[str, str]:
+    lines = text.splitlines()
+    if not lines or lines[0].strip() != "---":
+        return {}
+    parsed: dict[str, str] = {}
+    for line in lines[1:]:
+        if line.strip() == "---":
+            return parsed
+        if ":" not in line:
+            return {}
+        key, value = line.split(":", 1)
+        parsed[key.strip()] = value.strip().strip('"').strip("'")
+    return {}
+
+
+def _is_valid_skill_name(name: str) -> bool:
+    return re.fullmatch(r"[a-z0-9]+(?:-[a-z0-9]+)*", name) is not None
+
+
+def _description_keywords(description: str) -> list[str]:
+    words = re.findall(r"[a-z0-9][a-z0-9-]+", description.lower())
+    return words[:8] or ["repo"]
+
+
 def _build_resolvers(skill_specs: list[dict[str, object]]) -> dict[str, object]:
-    skill_names = [str(spec["name"]) for spec in skill_specs]
-    resolvers = [
-        {
-            "intent": "select validation command",
-            "skill": "build-test-debug",
-            "when": ["tests", "build", "debug"],
-        },
-        {
-            "intent": "answer repository structure question",
-            "skill": "repo-architecture",
-            "when": ["architecture", "layout", "ownership"],
-        },
-    ]
-    if "agent-procedure" in skill_names:
+    resolvers = []
+    for spec in skill_specs:
+        triggers = spec.get("triggers")
         resolvers.append(
             {
-                "intent": "follow repo-local agent procedure",
-                "skill": "agent-procedure",
-                "when": ["AGENTS.md", "safe procedure", "instructions"],
+                "intent": f"use {spec['name']}",
+                "skill": str(spec["name"]),
+                "when": triggers if isinstance(triggers, list) and triggers else [str(spec["name"])],
             }
         )
     return {"resolvers": resolvers}
@@ -458,6 +854,7 @@ def _build_resolvers(skill_specs: list[dict[str, object]]) -> dict[str, object]:
 
 def _build_evals(entry: RepoEntry, skill_specs: list[dict[str, object]]) -> dict[str, object]:
     skill_names = [str(spec["name"]) for spec in skill_specs]
+    first_skill = skill_names[0] if skill_names else "skill"
     tasks = [
         _eval_task(
             "repo-knowledge-readme",
@@ -496,30 +893,21 @@ def _build_evals(entry: RepoEntry, skill_specs: list[dict[str, object]]) -> dict
             ["do-not-leak"],
         ),
         _eval_task(
-            "resolver-build-test-debug",
+            "resolver-generated-skills",
             "resolver behavior",
-            "Route test-command questions to the build/test skill.",
+            "Route skill-trigger questions to generated repo skills.",
             ["resolvers.yml"],
             [],
-            ["build-test-debug"],
+            skill_names[:3],
             [],
         ),
         _eval_task(
-            "resolver-repo-architecture",
-            "resolver behavior",
-            "Route repo-layout questions to the architecture skill.",
-            ["resolvers.yml"],
-            [],
-            ["repo-architecture"],
-            [],
-        ),
-        _eval_task(
-            "skill-reference-routing",
+            "skill-metadata-routing",
             "repo knowledge",
-            "Use compact skills that route details to references.",
-            ["skills/build-test-debug/SKILL.md"],
+            "Use concrete skill metadata to choose the smallest relevant skill.",
+            [f"skills/{first_skill}/SKILL.md"],
             [],
-            ["references/repo-evidence.md"],
+            ["description:"],
             [],
         ),
         _eval_task(
@@ -532,15 +920,15 @@ def _build_evals(entry: RepoEntry, skill_specs: list[dict[str, object]]) -> dict
             [],
         ),
     ]
-    if "agent-procedure" in skill_names:
+    if len(skill_names) > 1:
         tasks.append(
             _eval_task(
-                "resolver-agent-procedure",
+                "multiple-small-skills",
                 "resolver behavior",
-                "Route local agent instruction questions to the procedure skill.",
-                ["resolvers.yml"],
+                "Prefer specialized generated skills over one broad catch-all.",
+                [f"skills/{name}/SKILL.md" for name in skill_names[:3]],
                 [],
-                ["agent-procedure"],
+                skill_names[:2],
                 [],
             )
         )
@@ -605,6 +993,8 @@ def _render_pack_report(
     skill_specs: list[dict[str, object]],
     unknowns: object,
     scanned: list[tuple[object, object]],
+    *,
+    skill_generator: str,
 ) -> str:
     lines = [
         f"# Draft Pack Report: {entry.id}",
@@ -612,6 +1002,7 @@ def _render_pack_report(
         "- Status: draft",
         "- Approval: not approved",
         "- Verification: not verified",
+        f"- Skill generator: {skill_generator}",
         "",
         "## Generated Artifacts",
         "",

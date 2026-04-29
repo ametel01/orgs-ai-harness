@@ -308,8 +308,11 @@ def _validate_generated_skills(skills_root: Path, root: Path, errors: list[str])
                     f"SKILL.md frontmatter name must match directory for {skill_path.relative_to(root)} "
                     f"(expected {name})"
                 )
-            if not isinstance(frontmatter.get("description"), str) or not str(frontmatter.get("description")).strip():
+            description = frontmatter.get("description")
+            if not isinstance(description, str) or not description.strip():
                 errors.append(f"SKILL.md frontmatter description must be non-empty: {skill_path.relative_to(root)}")
+            elif len(description) > 1024:
+                errors.append(f"SKILL.md frontmatter description exceeds 1024 characters: {skill_path.relative_to(root)}")
         _validate_skill_references(text, skill_root, root, errors)
         skill_names.add(name)
 
