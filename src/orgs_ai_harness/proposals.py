@@ -9,7 +9,9 @@ import subprocess
 from dataclasses import dataclass
 from datetime import UTC, datetime
 from pathlib import Path
+from typing import cast
 
+from orgs_ai_harness.artifact_schemas import JsonValue, ProposalEvidence, ProposalMetadata
 from orgs_ai_harness.config import split_top_level_blocks
 from orgs_ai_harness.repo_registry import RepoEntry, load_repo_entries
 
@@ -141,7 +143,7 @@ def refresh_repo(root: Path, repo_id: str) -> RefreshResult:
     proposal_root.mkdir(parents=True)
     affected_evals = _affected_eval_ids(root, entry.id)
     target = (root / "repos" / entry.id / "onboarding-summary.md").relative_to(root).as_posix()
-    metadata = {
+    metadata: ProposalMetadata = {
         "schema_version": 1,
         "id": proposal_id,
         "repo_id": entry.id,
@@ -156,7 +158,7 @@ def refresh_repo(root: Path, repo_id: str) -> RefreshResult:
         "previous_source_commit": previous_commit,
         "current_source_commit": current_commit,
     }
-    evidence = [
+    evidence: list[dict[str, object]] = [
         {
             "created_from": "source_refresh",
             "repo_id": entry.id,
@@ -325,8 +327,8 @@ def _find_repo(root: Path, repo_id: str) -> RepoEntry:
 
 def _collect_evidence(
     root: Path, repo_id: str, redaction_patterns: tuple[re.Pattern[str], ...]
-) -> list[dict[str, object]]:
-    evidence: list[dict[str, object]] = []
+) -> list[ProposalEvidence]:
+    evidence: list[ProposalEvidence] = []
     trace_root = root / "trace-summaries"
     for trace_path in sorted(trace_root.glob("*.jsonl")):
         for line_number, line in enumerate(trace_path.read_text(encoding="utf-8").splitlines(), start=1):
@@ -338,7 +340,13 @@ def _collect_evidence(
                 continue
             if not isinstance(event, dict) or event.get("repo_id") != repo_id:
                 continue
-            evidence_item = _event_to_evidence(root, trace_path, line_number, event, redaction_patterns)
+            evidence_item = _event_to_evidence(
+                root,
+                trace_path,
+                line_number,
+                cast(dict[str, object], event),
+                redaction_patterns,
+            )
             if evidence_item is not None:
                 evidence.append(evidence_item)
     return evidence
@@ -350,7 +358,7 @@ def _event_to_evidence(
     line_number: int,
     event: dict[str, object],
     redaction_patterns: tuple[re.Pattern[str], ...],
-) -> dict[str, object] | None:
+) -> ProposalEvidence | None:
     event_type = event.get("event_type")
     payload = event.get("payload")
     payload = payload if isinstance(payload, dict) else {}
@@ -365,21 +373,24 @@ def _event_to_evidence(
         return None
 
     relative_trace = trace_path.relative_to(root).as_posix()
-    return {
-        "created_from": created_from,
-        "event_type": event_type,
-        "event_id": event.get("event_id"),
-        "trace": f"{relative_trace}:{line_number}",
-        "payload": _redact_jsonable(payload, redaction_patterns),
-    }
+    return cast(
+        ProposalEvidence,
+        {
+            "created_from": created_from,
+            "event_type": event_type,
+            "event_id": cast(JsonValue, event.get("event_id")),
+            "trace": f"{relative_trace}:{line_number}",
+            "payload": cast(JsonValue, _redact_jsonable(payload, redaction_patterns)),
+        },
+    )
 
 
 def _proposal_metadata(
     root: Path,
     entry: RepoEntry,
     proposal_id: str,
-    evidence: list[dict[str, object]],
-) -> dict[str, object]:
+    evidence: list[ProposalEvidence],
+) -> ProposalMetadata:
     created_from = sorted({str(item["created_from"]) for item in evidence})
     affected_evals: list[str] = []
     for item in evidence:
@@ -409,7 +420,7 @@ def _target_artifact(root: Path, entry: RepoEntry) -> str:
     return (root / "repos" / entry.id / "onboarding-summary.md").relative_to(root).as_posix()
 
 
-def _render_summary(metadata: dict[str, object], evidence: list[dict[str, object]]) -> str:
+def _render_summary(metadata: ProposalMetadata, evidence: list[ProposalEvidence]) -> str:
     created_from = metadata.get("created_from")
     sources = ", ".join(str(item) for item in created_from) if isinstance(created_from, list) else ""
     target_artifacts = metadata.get("target_artifacts")
@@ -435,7 +446,7 @@ def _render_summary(metadata: dict[str, object], evidence: list[dict[str, object
     )
 
 
-def _render_refresh_summary(metadata: dict[str, object]) -> str:
+def _render_refresh_summary(metadata: ProposalMetadata) -> str:
     return (
         "\n".join(
             [
@@ -443,8 +454,8 @@ def _render_refresh_summary(metadata: dict[str, object]) -> str:
                 "",
                 f"- Status: {metadata['status']}",
                 f"- Risk: {metadata['risk']}",
-                f"- Previous Source Commit: {metadata['previous_source_commit']}",
-                f"- Current Source Commit: {metadata['current_source_commit']}",
+                f"- Previous Source Commit: {metadata.get('previous_source_commit', '')}",
+                f"- Current Source Commit: {metadata.get('current_source_commit', '')}",
                 "",
                 "## Rationale",
                 "The repository source changed since the last recorded onboarding scan. "
@@ -481,7 +492,7 @@ def _next_proposal_id(proposals_root: Path) -> str:
     return f"prop_{highest + 1:03d}"
 
 
-def _load_metadata(proposal_root: Path) -> dict[str, object]:
+def _load_metadata(proposal_root: Path) -> ProposalMetadata:
     metadata_path = proposal_root / "metadata.yml"
     if not metadata_path.is_file():
         raise ProposalError(f"proposal metadata is missing: {metadata_path}")
@@ -491,10 +502,10 @@ def _load_metadata(proposal_root: Path) -> dict[str, object]:
         raise ProposalError(f"proposal metadata is malformed: {metadata_path} ({exc.msg})") from exc
     if not isinstance(metadata, dict):
         raise ProposalError(f"proposal metadata must be an object: {metadata_path}")
-    return metadata
+    return cast(ProposalMetadata, metadata)
 
 
-def _write_metadata(proposal_root: Path, metadata: dict[str, object]) -> None:
+def _write_metadata(proposal_root: Path, metadata: ProposalMetadata) -> None:
     (proposal_root / "metadata.yml").write_text(
         json.dumps(metadata, indent=2, sort_keys=True) + "\n",
         encoding="utf-8",
@@ -504,7 +515,7 @@ def _write_metadata(proposal_root: Path, metadata: dict[str, object]) -> None:
 def _validate_metadata(
     root: Path,
     proposal_root: Path,
-    metadata: dict[str, object],
+    metadata: ProposalMetadata,
     *,
     require_open: bool,
 ) -> None:
@@ -540,13 +551,13 @@ def _proposal_root(root: Path, proposal_id: str) -> Path:
     return proposal_root
 
 
-def _ensure_open(metadata: dict[str, object], proposal_root: Path) -> None:
+def _ensure_open(metadata: ProposalMetadata, proposal_root: Path) -> None:
     status = metadata.get("status")
     if status != "open":
         raise ProposalError(f"proposal {proposal_root.name} is not open: status={status}")
 
 
-def _metadata_string(metadata: dict[str, object], field: str, proposal_root: Path) -> str:
+def _metadata_string(metadata: ProposalMetadata, field: str, proposal_root: Path) -> str:
     value = metadata.get(field)
     if not isinstance(value, str) or not value.strip():
         raise ProposalError(
@@ -555,7 +566,7 @@ def _metadata_string(metadata: dict[str, object], field: str, proposal_root: Pat
     return value
 
 
-def _metadata_string_list(metadata: dict[str, object], field: str, proposal_root: Path) -> list[str]:
+def _metadata_string_list(metadata: ProposalMetadata, field: str, proposal_root: Path) -> list[str]:
     value = metadata.get(field)
     if not isinstance(value, list):
         raise ProposalError(f"proposal metadata field {field} must be a list: {proposal_root / 'metadata.yml'}")

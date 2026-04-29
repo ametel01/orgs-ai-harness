@@ -7,8 +7,9 @@ import subprocess
 from dataclasses import dataclass
 from datetime import UTC, datetime
 from pathlib import Path
-from typing import Protocol
+from typing import Protocol, cast
 
+from orgs_ai_harness.artifact_schemas import AdapterMetrics, ApprovalMetadata, EvalRun, EvalScore, EvalTask
 from orgs_ai_harness.repo_registry import RepoEntry, load_repo_entries, update_repo_coverage_status
 
 
@@ -33,23 +34,23 @@ class AdapterAnswer:
     answer: str
     cited_files: tuple[str, ...]
     commands: tuple[str, ...]
-    metrics: dict[str, int]
+    metrics: AdapterMetrics
 
 
 class EvalAdapter(Protocol):
     adapter_id: str
 
-    def read_repo(self, artifact_root: Path, task: dict[str, object]) -> dict[str, str]:
+    def read_repo(self, artifact_root: Path, task: EvalTask) -> dict[str, str]:
         """Read repo artifact evidence for an eval task."""
         ...
 
-    def use_skill_pack(self, artifact_root: Path, approval: dict[str, object]) -> None:
+    def use_skill_pack(self, artifact_root: Path, approval: ApprovalMetadata) -> None:
         """Make the approved skill pack available to later answers."""
         ...
 
     def answer_eval_task(
         self,
-        task: dict[str, object],
+        task: EvalTask,
         evidence: dict[str, str],
         *,
         with_skill_pack: bool,
@@ -65,7 +66,7 @@ class DeterministicLocalAdapter:
         self.adapter_id = adapter_id
         self.skill_pack_loaded = False
 
-    def read_repo(self, artifact_root: Path, task: dict[str, object]) -> dict[str, str]:
+    def read_repo(self, artifact_root: Path, task: EvalTask) -> dict[str, str]:
         evidence: dict[str, str] = {}
         for relative in _string_list(task.get("expected_files")):
             path = artifact_root / relative
@@ -73,7 +74,7 @@ class DeterministicLocalAdapter:
                 evidence[relative] = path.read_text(encoding="utf-8", errors="replace")
         return evidence
 
-    def use_skill_pack(self, artifact_root: Path, approval: dict[str, object]) -> None:
+    def use_skill_pack(self, artifact_root: Path, approval: ApprovalMetadata) -> None:
         approved = approval.get("approved_artifacts")
         if not isinstance(approved, list) or not approved:
             raise EvalReplayError("approved skill-pack artifacts are required for the skill-pack eval pass")
@@ -81,7 +82,7 @@ class DeterministicLocalAdapter:
 
     def answer_eval_task(
         self,
-        task: dict[str, object],
+        task: EvalTask,
         evidence: dict[str, str],
         *,
         with_skill_pack: bool,
@@ -110,7 +111,7 @@ class DeterministicLocalAdapter:
             "Commands: " + ", ".join(commands),
         ]
         if not expected_files and not expected_contains and not expected_commands:
-            metrics = {
+            metrics: AdapterMetrics = {
                 "tool_calls": 0,
                 "file_reads": 0,
                 "searches": 0,
@@ -243,7 +244,7 @@ def run_eval(
     )
 
 
-def score_answer(task: dict[str, object], answer: AdapterAnswer) -> dict[str, object]:
+def score_answer(task: EvalTask, answer: AdapterAnswer) -> EvalScore:
     """Score one eval answer with bounded evidence checks."""
 
     answer_text = answer.answer
@@ -287,7 +288,7 @@ def score_answer(task: dict[str, object], answer: AdapterAnswer) -> dict[str, ob
     }
 
 
-def rediscovery_cost(metrics: dict[str, int]) -> int:
+def rediscovery_cost(metrics: AdapterMetrics) -> int:
     """Calculate rediscovery cost from bounded local adapter metrics."""
 
     fields = ("tool_calls", "file_reads", "searches", "command_attempts", "elapsed_adapter_steps")
@@ -323,13 +324,13 @@ def _load_approval(
     entry: RepoEntry,
     *,
     development: bool,
-) -> tuple[dict[str, object], bool]:
+) -> tuple[ApprovalMetadata, bool]:
     approval_path = root / "repos" / entry.id / "approval.yml"
     if not approval_path.is_file():
         if development:
             return {"approved_artifacts": [], "pack_ref": None, "status": "development"}, False
         raise EvalReplayError(f"repo {entry.id} has no human-approved pack metadata")
-    approval = _load_json(approval_path, "approval metadata")
+    approval = cast(ApprovalMetadata, _load_json(approval_path, "approval metadata"))
     if approval.get("decision") != "approved":
         if development:
             return approval, False
@@ -345,7 +346,7 @@ def _load_approval(
 def _ensure_eval_artifact_is_approved(
     root: Path,
     entry: RepoEntry,
-    approval: dict[str, object],
+    approval: ApprovalMetadata,
     *,
     development: bool,
 ) -> None:
@@ -373,9 +374,9 @@ def _run_pass(
     *,
     with_skill_pack: bool,
     pack_ref: str | None,
-) -> dict[str, object]:
-    results: list[dict[str, object]] = []
-    aggregate = {
+) -> EvalRun:
+    results: list[EvalScore] = []
+    aggregate: AdapterMetrics = {
         "tool_calls": 0,
         "file_reads": 0,
         "searches": 0,
@@ -383,11 +384,12 @@ def _run_pass(
         "elapsed_adapter_steps": 0,
     }
     for raw_task in tasks:
-        if not isinstance(raw_task, dict):
+        task = _coerce_eval_task(raw_task)
+        if task is None:
             continue
-        evidence = adapter.read_repo(artifact_root, raw_task)
-        answer = adapter.answer_eval_task(raw_task, evidence, with_skill_pack=with_skill_pack)
-        scored = score_answer(raw_task, answer)
+        evidence = adapter.read_repo(artifact_root, task)
+        answer = adapter.answer_eval_task(task, evidence, with_skill_pack=with_skill_pack)
+        scored = score_answer(task, answer)
         for field in aggregate:
             aggregate[field] += int(answer.metrics.get(field, 0))
         results.append(scored)
@@ -449,7 +451,13 @@ def _command_approvals(path: Path) -> list[str]:
     return commands
 
 
-def _pass_rate(run: dict[str, object]) -> float:
+def _coerce_eval_task(raw_task: object) -> EvalTask | None:
+    if not isinstance(raw_task, dict):
+        return None
+    return cast(EvalTask, raw_task)
+
+
+def _pass_rate(run: EvalRun | dict[str, object]) -> float:
     tasks = run.get("tasks")
     if not isinstance(tasks, list) or not tasks:
         return 0.0
@@ -457,11 +465,13 @@ def _pass_rate(run: dict[str, object]) -> float:
     return round(passed / len(tasks), 4)
 
 
-def _rediscovery_cost(run: dict[str, object]) -> int:
+def _rediscovery_cost(run: EvalRun | dict[str, object]) -> int:
     metrics = run.get("metrics")
     if not isinstance(metrics, dict):
         return 0
-    return rediscovery_cost({str(key): int(value) for key, value in metrics.items() if isinstance(value, int)})
+    return rediscovery_cost(
+        cast(AdapterMetrics, {str(key): int(value) for key, value in metrics.items() if isinstance(value, int)})
+    )
 
 
 def _cost_reduction(baseline_cost: int, skill_pack_cost: int) -> float:
@@ -493,8 +503,8 @@ def _write_traces(
     entry: RepoEntry,
     adapter_id: str,
     pack_ref: str | None,
-    baseline: dict[str, object],
-    skill_pack: dict[str, object],
+    baseline: EvalRun,
+    skill_pack: EvalRun,
     command_approvals: list[str],
 ) -> Path:
     trace_path = root / "trace-summaries" / "eval-events.jsonl"
@@ -633,7 +643,7 @@ def _update_pack_report(path: Path, report: dict[str, object]) -> None:
 def _update_approval_after_eval(
     root: Path,
     entry: RepoEntry,
-    approval: dict[str, object],
+    approval: ApprovalMetadata,
     status: str,
     report: dict[str, object],
     *,
@@ -699,7 +709,7 @@ def _repo_source_commit(root: Path, entry: RepoEntry) -> str:
     return "unknown"
 
 
-def _pack_ref(entry: RepoEntry, approval: dict[str, object]) -> str | None:
+def _pack_ref(entry: RepoEntry, approval: ApprovalMetadata) -> str | None:
     if entry.pack_ref is not None:
         return entry.pack_ref
     value = approval.get("pack_ref")

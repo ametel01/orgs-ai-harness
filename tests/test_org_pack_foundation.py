@@ -13,6 +13,7 @@ from pathlib import Path
 
 import orgs_ai_harness.cli as cli_module
 import orgs_ai_harness.repo_onboarding as repo_onboarding_module
+from orgs_ai_harness.artifact_schemas import EvalTask
 from orgs_ai_harness.cache_manager import export_cached_pack, refresh_cache
 from orgs_ai_harness.config import load_harness_config, parse_harness_config, save_harness_config
 from orgs_ai_harness.eval_replay import AdapterAnswer, rediscovery_cost, score_answer
@@ -3213,7 +3214,7 @@ class RepoOnboardingTests(unittest.TestCase):
             self.assertIn("no user-approved onboarding evals", eval_result.stderr)
 
     def test_score_answer_requires_evidence_and_forbidden_claims_fail(self) -> None:
-        task = {
+        task: EvalTask = {
             "id": "safe-procedure",
             "expected_files": ["scan/scan-manifest.yml"],
             "expected_commands": ["npm test"],
