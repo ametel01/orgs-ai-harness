@@ -1,0 +1,68 @@
+{
+  "repo_id": "orgs-ai-harness",
+  "seed_context": {
+    "purpose": {
+      "value": null,
+      "source": "manual repo registration"
+    },
+    "owner": {
+      "value": "ametel01",
+      "source": "manual repo registration"
+    }
+  },
+  "evidence_categories": {
+    "readme": [
+      "README.md"
+    ],
+    "package_manifest": [
+      "pyproject.toml"
+    ]
+  },
+  "hypotheses": [
+    {
+      "name": "project_type",
+      "value": "application_or_package",
+      "evidence_paths": [
+        "pyproject.toml"
+      ],
+      "unknown": false
+    },
+    {
+      "name": "package_manager",
+      "value": "python",
+      "evidence_paths": [],
+      "unknown": true
+    },
+    {
+      "name": "test_command_candidates",
+      "value": [
+        "pytest"
+      ],
+      "evidence_paths": [
+        "pyproject.toml"
+      ],
+      "unknown": false
+    },
+    {
+      "name": "ci_validation",
+      "value": "unknown",
+      "evidence_paths": [],
+      "unknown": true
+    },
+    {
+      "name": "agent_documentation",
+      "value": "unknown",
+      "evidence_paths": [],
+      "unknown": true
+    },
+    {
+      "name": "scripts",
+      "value": [],
+      "evidence_paths": [],
+      "unknown": true
+    }
+  ],
+  "unknown_refs": [
+    "unk_001"
+  ]
+}

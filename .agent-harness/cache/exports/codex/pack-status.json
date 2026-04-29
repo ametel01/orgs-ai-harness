@@ -1,0 +1,14 @@
+{
+  "pack_ref": "19d692be8cddb310b10a55e34cc218f023fef1634687f1652887a43f7d7157a4",
+  "repo_id": "orgs-ai-harness",
+  "schema_version": 1,
+  "source_pack_ref": "repos/orgs-ai-harness/approval.yml",
+  "status": "approved-unverified",
+  "target": "codex",
+  "warnings": [
+    {
+      "code": "approved-unverified",
+      "message": "Pack is human-approved but eval replay has not verified it."
+    }
+  ]
+}
