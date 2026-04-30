@@ -11,7 +11,10 @@ from pathlib import Path
 
 from orgs_ai_harness.approval import ApprovalError, approve_repo, reject_repo, render_approval_review
 from orgs_ai_harness.cache_manager import CacheManagerError, export_cached_pack, refresh_cache
+from orgs_ai_harness.dependency_artifacts import write_dependency_campaign_artifacts
 from orgs_ai_harness.dependency_campaign import DependencyCampaignError, collect_dependency_campaign_input
+from orgs_ai_harness.dependency_context import build_dependency_inventory
+from orgs_ai_harness.dependency_risk import build_dependency_risk_report
 from orgs_ai_harness.eval_replay import EvalReplayError, eval_error_summary, eval_result_summary, run_eval
 from orgs_ai_harness.explain import ExplainError, render_explain
 from orgs_ai_harness.llm_runner import run_llm_command_with_progress
@@ -244,6 +247,12 @@ def build_parser() -> argparse.ArgumentParser:
         action="append",
         dest="packages",
         help="Optional package filter; may be provided more than once",
+    )
+    dependency_campaign.add_argument(
+        "--json-path", help="Write the stable dependency campaign JSON artifact to this path"
+    )
+    dependency_campaign.add_argument(
+        "--markdown-path", help="Write the human-readable dependency campaign Markdown artifact to this path"
     )
 
     cache_parser = subparsers.add_parser("cache", help="Manage repo-local pinned caches")
@@ -644,10 +653,12 @@ def _handle_dependency_command(args: argparse.Namespace) -> int:
         return 2
     root = _resolve_existing_org_pack_root(Path.cwd())
     campaign = collect_dependency_campaign_input(root, name=args.name, package_filters=tuple(args.packages or ()))
+    inventory = build_dependency_inventory(root, campaign)
+    risk = build_dependency_risk_report(root, inventory)
     print(
         f"Dependency campaign {campaign.name}; status={campaign.status}; "
         f"eligible_repos={len(campaign.repos)}; skipped_repos={len(campaign.skipped_repos)}; "
-        f"packages={len(campaign.package_filters)}"
+        f"packages={len(campaign.package_filters)}; overall_risk={risk.overall_risk.value}"
     )
     for repo in campaign.repos:
         print(f"{repo.repo_id}\t{repo.repo_path}\tstatus={repo.coverage_status}")
@@ -655,6 +666,17 @@ def _handle_dependency_command(args: argparse.Namespace) -> int:
         print("Skipped repos:")
         for skipped in campaign.skipped_repos:
             print(f"{skipped.repo_id}\t{skipped.reason}")
+    if args.json_path or args.markdown_path:
+        written = write_dependency_campaign_artifacts(
+            inventory,
+            risk,
+            json_path=Path(args.json_path) if args.json_path else None,
+            markdown_path=Path(args.markdown_path) if args.markdown_path else None,
+        )
+        if written.json_path is not None:
+            print(f"JSON artifact: {written.json_path}")
+        if written.markdown_path is not None:
+            print(f"Markdown artifact: {written.markdown_path}")
     return 0
 
 
