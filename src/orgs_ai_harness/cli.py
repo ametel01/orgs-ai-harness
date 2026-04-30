@@ -11,6 +11,7 @@ from pathlib import Path
 
 from orgs_ai_harness.approval import ApprovalError, approve_repo, reject_repo, render_approval_review
 from orgs_ai_harness.cache_manager import CacheManagerError, export_cached_pack, refresh_cache
+from orgs_ai_harness.dependency_campaign import DependencyCampaignError, collect_dependency_campaign_input
 from orgs_ai_harness.eval_replay import EvalReplayError, eval_error_summary, eval_result_summary, run_eval
 from orgs_ai_harness.explain import ExplainError, render_explain
 from orgs_ai_harness.llm_runner import run_llm_command_with_progress
@@ -232,6 +233,19 @@ def build_parser() -> argparse.ArgumentParser:
         "--markdown-path", help="Write the human-readable release readiness Markdown artifact to this path"
     )
 
+    dependency_parser = subparsers.add_parser("dependency", help="Create artifact-only dependency campaign inputs")
+    dependency_subparsers = dependency_parser.add_subparsers(dest="dependency_command", required=True)
+    dependency_campaign = dependency_subparsers.add_parser(
+        "campaign", help="Resolve artifact-only dependency campaign inputs"
+    )
+    dependency_campaign.add_argument("--name", required=True, help="Dependency campaign name")
+    dependency_campaign.add_argument(
+        "--package",
+        action="append",
+        dest="packages",
+        help="Optional package filter; may be provided more than once",
+    )
+
     cache_parser = subparsers.add_parser("cache", help="Manage repo-local pinned caches")
     cache_subparsers = cache_parser.add_subparsers(dest="cache_command", required=True)
     cache_refresh = cache_subparsers.add_parser("refresh", help="Refresh a repo-local approved pack cache")
@@ -289,6 +303,7 @@ def main(argv: list[str] | None = None) -> int:
         ApprovalError,
         EvalReplayError,
         CacheManagerError,
+        DependencyCampaignError,
         ExplainError,
         ProposalError,
         ReviewError,
@@ -319,6 +334,7 @@ def _handler_for_command(command: str):
         "proposals": _handle_proposals_command,
         "review": _handle_review_command,
         "release": _handle_release_command,
+        "dependency": _handle_dependency_command,
         "repo": _handle_repo_command,
     }
     return handlers.get(command)
@@ -620,6 +636,25 @@ def _handle_release_command(args: argparse.Namespace) -> int:
             print(f"JSON artifact: {written.json_path}")
         if written.markdown_path is not None:
             print(f"Markdown artifact: {written.markdown_path}")
+    return 0
+
+
+def _handle_dependency_command(args: argparse.Namespace) -> int:
+    if args.dependency_command != "campaign":
+        return 2
+    root = _resolve_existing_org_pack_root(Path.cwd())
+    campaign = collect_dependency_campaign_input(root, name=args.name, package_filters=tuple(args.packages or ()))
+    print(
+        f"Dependency campaign {campaign.name}; status={campaign.status}; "
+        f"eligible_repos={len(campaign.repos)}; skipped_repos={len(campaign.skipped_repos)}; "
+        f"packages={len(campaign.package_filters)}"
+    )
+    for repo in campaign.repos:
+        print(f"{repo.repo_id}\t{repo.repo_path}\tstatus={repo.coverage_status}")
+    if campaign.skipped_repos:
+        print("Skipped repos:")
+        for skipped in campaign.skipped_repos:
+            print(f"{skipped.repo_id}\t{skipped.reason}")
     return 0
 
 
