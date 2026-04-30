@@ -306,6 +306,24 @@ class OrgPackFoundationTests(unittest.TestCase):
         self.assertNotIn("tags:", workflow)
         self.assertNotIn("contents: write", workflow)
 
+    def test_ci_workflow_uses_artifact_only_dependency_campaign_command(self) -> None:
+        workflow = (Path.cwd() / ".github" / "workflows" / "ci.yml").read_text(encoding="utf-8")
+
+        self.assertIn("dependency_campaign_name:", workflow)
+        self.assertIn("dependency-campaign-artifacts:", workflow)
+        self.assertIn("github.event_name == 'workflow_dispatch'", workflow)
+        self.assertIn("Discover eligible dependency campaign repos", workflow)
+        self.assertIn("uv run harness dependency campaign", workflow)
+        self.assertIn("--json-path", workflow)
+        self.assertIn("--markdown-path", workflow)
+        self.assertIn(".agent-harness/dependency-campaign/", workflow)
+        self.assertIn("name: dependency-campaign-artifacts", workflow)
+        self.assertIn("actions/upload-artifact@v4", workflow)
+        self.assertIn("SKIPPED.md", workflow)
+        self.assertNotIn("contents: write", workflow)
+        self.assertNotIn("pull-requests: write", workflow)
+        self.assertNotIn("issues: write", workflow)
+
     def test_cli_init_github_profile_url_infers_org_name(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
             init_result = subprocess.run(

@@ -19,6 +19,11 @@ on:
         description: "Optional head git ref for the release range"
         required: false
         type: string
+      dependency_campaign_name:
+        description: "Dependency campaign artifact name"
+        required: false
+        default: "dependency-campaign"
+        type: string
 
 permissions:
   contents: read
@@ -428,3 +433,132 @@ jobs:
         with:
           name: release-readiness-artifacts
           path: .agent-harness/release-readiness/
+
+  dependency-campaign-artifacts:
+    name: Dependency Campaign Artifacts
+    runs-on: ubuntu-latest
+    needs: verify
+    if: github.event_name == 'workflow_dispatch'
+
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.13"
+
+      - name: Set up uv
+        uses: astral-sh/setup-uv@v5
+        with:
+          enable-cache: true
+
+      - name: Sync dependencies
+        run: make sync
+
+      - name: Discover eligible dependency campaign repos
+        run: |
+          mkdir -p .agent-harness/dependency-campaign
+          uv run python - <<'PY'
+          import json
+          from pathlib import Path
+
+          from orgs_ai_harness.repo_registry import load_repo_entries
+
+          root = Path("org-agent-skills")
+          output_root = Path(".agent-harness/dependency-campaign")
+          manifest_names = {
+              "Cargo.toml",
+              "go.mod",
+              "package.json",
+              "pyproject.toml",
+              "requirements.txt",
+          }
+          targets = []
+          skipped = []
+          evidence = {}
+
+          if not (root / "harness.yml").is_file():
+              (output_root / "repos.txt").write_text("", encoding="utf-8")
+              (output_root / "discovery.json").write_text(
+                  json.dumps(
+                      {
+                          "targets": targets,
+                          "skipped": [{"repo_id": "-", "reason": "missing org-agent-skills/harness.yml"}],
+                      },
+                      indent=2,
+                      sort_keys=True,
+                  )
+                  + "\n",
+                  encoding="utf-8",
+              )
+              (output_root / "SKIPPED.md").write_text(
+                  "# Dependency Campaign Artifacts Skipped\n\nNo local org pack was found.\n",
+                  encoding="utf-8",
+              )
+              print("No local org pack found.")
+              raise SystemExit(0)
+
+          for entry in load_repo_entries(root / "harness.yml"):
+              repo_path = (root / entry.local_path).resolve() if entry.local_path else None
+              reason = None
+              if not entry.active or entry.external:
+                  reason = "not active selected coverage"
+              elif repo_path is None or not repo_path.is_dir():
+                  reason = f"missing local repo path: {entry.local_path or '-'}"
+              else:
+                  dependency_files = sorted(
+                      path.relative_to(repo_path).as_posix()
+                      for path in repo_path.rglob("*")
+                      if path.is_file() and path.name in manifest_names
+                  )
+                  if dependency_files:
+                      targets.append(entry.id)
+                      evidence[entry.id] = dependency_files
+                  else:
+                      reason = "no dependency manifest evidence found"
+
+              if reason is not None:
+                  skipped.append({"repo_id": entry.id, "reason": reason})
+
+          (output_root / "repos.txt").write_text("\n".join(targets) + ("\n" if targets else ""), encoding="utf-8")
+          (output_root / "discovery.json").write_text(
+              json.dumps({"targets": targets, "skipped": skipped, "dependency_evidence": evidence}, indent=2, sort_keys=True)
+              + "\n",
+              encoding="utf-8",
+          )
+          if targets:
+              print(f"Eligible dependency campaign repos: {', '.join(targets)}")
+          else:
+              (output_root / "SKIPPED.md").write_text(
+                  "# Dependency Campaign Artifacts Skipped\n\n"
+                  "No eligible active local repo with dependency manifest evidence was found.\n",
+                  encoding="utf-8",
+              )
+              print("No eligible dependency campaign repos found.")
+          PY
+
+      - name: Run dependency campaign artifact command
+        env:
+          CAMPAIGN_NAME: ${{ github.event.inputs.dependency_campaign_name }}
+        run: |
+          if [ ! -s .agent-harness/dependency-campaign/repos.txt ]; then
+            echo "No eligible dependency campaign repos found."
+            exit 0
+          fi
+
+          campaign_name="${CAMPAIGN_NAME:-dependency-campaign}"
+          echo "Running dependency campaign artifacts for ${campaign_name}"
+          uv run harness dependency campaign \
+            --name "$campaign_name" \
+            --json-path ".agent-harness/dependency-campaign/campaign.json" \
+            --markdown-path ".agent-harness/dependency-campaign/campaign.md" \
+            > ".agent-harness/dependency-campaign/campaign.stdout.txt"
+
+      - name: Upload dependency campaign artifacts
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: dependency-campaign-artifacts
+          path: .agent-harness/dependency-campaign/
