@@ -354,6 +354,67 @@ Common release readiness failures:
 - `cannot resolve base/head ref`: fetch the relevant commits or use `--files` /
   `--files-from` instead.
 
+## Dependency Campaign Artifact Workflow
+
+Use dependency campaign artifacts when maintainers need a local, reviewable
+cross-repo dependency inventory, risk summary, and rollout order without
+manifest edits, package-manager upgrades, PR creation, comments, or
+merge-blocking policy.
+
+Manual artifact generation:
+
+```sh
+uv run harness dependency campaign \
+  --name dependency-campaign \
+  --package fastapi \
+  --json-path .agent-harness/dependency-campaign/campaign.json \
+  --markdown-path .agent-harness/dependency-campaign/campaign.md
+```
+
+The `--package` filter is optional and may be repeated. It is recorded as
+campaign input only; the command does not query registries or compare latest
+versions.
+
+The JSON artifact is the machine-readable contract. It includes
+`schema_version`, `status`, `campaign`, `summary`, `repos`, `rollout_plan`,
+`skipped_repos`, and `warnings`. Each repo entry contains dependency manifests,
+lockfiles, package-manager evidence, generated pack status, missing evidence,
+risk items, suggested local commands, and suggested eval ids. Suggested commands
+and evals are recommendations derived from known local evidence and are not
+executed by the command.
+
+The GitHub Actions `Dependency Campaign Artifacts` job runs only through
+`workflow_dispatch`. It discovers active local repos with dependency manifest
+evidence, writes `.agent-harness/dependency-campaign/discovery.json`, and runs
+the dependency campaign command when at least one eligible repo is found. It
+uploads `.agent-harness/dependency-campaign/` as the
+`dependency-campaign-artifacts` artifact. If no org pack, local repo path, or
+dependency manifest evidence is available, it exits successfully and uploads
+`discovery.json` plus `SKIPPED.md`.
+
+Interpretation guidance:
+
+- High risk means the campaign found malformed dependency manifests, unverified
+  packs, approval metadata gaps, migration coupling, or similarly conservative
+  rollout signals. It is not a merge-blocking decision.
+- Suggested checks are derived from generated script manifests, onboarding eval
+  expected commands, scan command candidates, deterministic repo manifests, and
+  built-in `harness validate <repo-id>`.
+- Suggested eval ids identify existing onboarding evals whose expected files
+  overlap dependency manifests.
+- Missing evidence means local files or generated pack artifacts do not expose
+  expected dependency, lockfile, approval, eval, scan, skill, or resolver
+  context.
+
+Common dependency campaign failures:
+
+- `dependency campaign name cannot be empty`: pass a non-empty `--name`.
+- `requires at least one registered repository`: register repos before running
+  a campaign.
+- `has no eligible active local repositories`: activate selected local coverage
+  or repair repo paths with `uv run harness repo set-path`.
+- `package filters cannot be empty`: remove empty `--package` values.
+
 ## Runtime Sessions
 
 Start the runtime vertical slice. The default permission mode is read-only:

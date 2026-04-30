@@ -147,7 +147,7 @@ actually supports.
 | File writes | `local.write_file` is available behind explicit `workspace-write`, checks workspace boundaries, rejects protected generated pack paths, and reports changed files | Patch application, multi-file transactions, rollback plans, and recovery that completes interrupted edits |
 | Lifecycle hooks | Pre-tool hooks can deny dispatch; post-tool hooks can attach warning/audit metadata; pre-hook failures fail closed | Hook plugin discovery, external audit sinks, redaction hooks, and workflow-specific hook packs |
 | Agent Skills format | Generated skills are validated for frontmatter, directory-name agreement, description length, and valid `references/` links; packs can be exported for runtime targets | Automated refresh from the live Agent Skills spec, optional metadata policy, and compatibility/allowed-tools enforcement |
-| Skill-pack lifecycle | Repo discovery, onboarding, generated skills, resolver metadata, approval hashes, eval replay, cache/export, proposals, and verified pack state are implemented | Batch onboarding, PR review workflows, CI eval replay, hosted dashboard, release readiness campaigns, and autonomous improvement |
+| Skill-pack lifecycle | Repo discovery, onboarding, generated skills, resolver metadata, approval hashes, eval replay, CI eval replay, PR review artifacts, release readiness artifacts, dependency campaign artifacts, cache/export, proposals, and verified pack state are implemented | Batch onboarding, hosted dashboard, dependency edit automation, and autonomous improvement |
 
 ## Org Pack Layout
 

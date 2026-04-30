@@ -264,6 +264,50 @@ workflow is artifact-only. It does not tag, publish, deploy, create GitHub
 Releases, post comments, request reviewers, mutate GitHub state, or block
 merges based on risk classification.
 
+## Dependency Campaign Artifacts
+
+Generate artifact-only dependency campaign output across eligible registered
+repos:
+
+```sh
+uv run harness dependency campaign \
+  --name dependency-campaign \
+  --package fastapi \
+  --json-path .agent-harness/dependency-campaign/campaign.json \
+  --markdown-path .agent-harness/dependency-campaign/campaign.md
+```
+
+The `--package` filter is optional and may be repeated. It records deterministic
+campaign inputs for maintainers; the command does not query package registries,
+compare latest versions, edit dependency files, run package-manager commands, or
+open pull requests.
+
+Eligible repos must be registered, active, non-external, and have a resolvable
+local path. The inventory scans local files for supported dependency manifests
+and lockfiles such as `package.json`, `pyproject.toml`, `requirements.txt`,
+`go.mod`, `Cargo.toml`, `package-lock.json`, `bun.lock`, `uv.lock`, `go.sum`,
+and `Cargo.lock`. Malformed manifests, missing lockfiles, missing generated
+pack evidence, missing approval metadata, missing eval evidence, and skipped
+repos are represented as artifact data, warnings, or risk items.
+
+The JSON artifact has `schema_version: 1` and stable sections for `campaign`,
+`summary`, `repos`, `rollout_plan`, `skipped_repos`, and `warnings`. Risk
+levels are `low`, `medium`, and `high`. Suggested commands come only from known
+local evidence such as generated script manifests, onboarding eval expected
+commands, scan command candidates, deterministic repo manifests, and the built-in
+`harness validate <repo-id>` pattern. Suggested evals are existing onboarding
+eval ids whose expected files overlap dependency manifests. The Markdown
+artifact is a concise human readout of the same data.
+
+The GitHub Actions `Dependency Campaign Artifacts` job runs only from
+`workflow_dispatch`. It discovers active local repos with dependency manifest
+evidence, skips missing or ineligible states with
+`.agent-harness/dependency-campaign/discovery.json` and `SKIPPED.md`, and
+uploads `.agent-harness/dependency-campaign/` as
+`dependency-campaign-artifacts`. The first workflow is artifact-only. It does
+not edit manifests, run package-manager upgrades, open PRs, post comments,
+request reviewers, mutate approvals, publish, deploy, or block merges.
+
 ## Eval, Cache, And Export
 
 Run local eval replay after approval:

@@ -60,6 +60,7 @@ uv run harness eval <repo-id>
 uv run harness eval <repo-id> --ci --summary-path .agent-harness/ci-eval/<repo-id>.json
 uv run harness review changed-files --repo-id <repo-id> --files src/app.py --json-path .agent-harness/pr-review/<repo-id>.json --markdown-path .agent-harness/pr-review/<repo-id>.md
 uv run harness release readiness --repo-id <repo-id> --version v1.2.3 --files CHANGELOG.md --json-path .agent-harness/release-readiness/<repo-id>.json --markdown-path .agent-harness/release-readiness/<repo-id>.md
+uv run harness dependency campaign --name dependency-campaign --json-path .agent-harness/dependency-campaign/campaign.json --markdown-path .agent-harness/dependency-campaign/campaign.md
 uv run harness cache refresh <repo-id>
 uv run harness export codex <repo-id>
 ```
@@ -123,6 +124,20 @@ executed. The GitHub Actions `Release Readiness Artifacts` job is
 `release-readiness-artifacts`, and skips ineligible repo states with
 `discovery.json` plus `SKIPPED.md`. This first workflow does not tag, publish,
 deploy, create GitHub Releases, post comments, request reviewers, or block
+merges.
+
+`harness dependency campaign` is the artifact-only cross-repo dependency
+campaign path. It requires a campaign `--name`, resolves active non-external
+local repos from the org pack, collects dependency manifests and lockfiles from
+local files, classifies conservative risk, and writes schema-versioned JSON and
+Markdown when `--json-path` and `--markdown-path` are provided. Suggested
+commands and eval ids are derived from known local evidence and are not
+executed. The `Dependency Campaign Artifacts` workflow runs only from
+`workflow_dispatch`, uploads `.agent-harness/dependency-campaign/` as
+`dependency-campaign-artifacts`, and skips missing org packs, missing local
+paths, or no dependency manifest evidence with `discovery.json` plus
+`SKIPPED.md`. This first workflow does not edit manifests, run package-manager
+upgrades, open PRs, post comments, mutate approvals, publish, deploy, or block
 merges.
 
 Approved or verified packs can be refreshed into a repo-local

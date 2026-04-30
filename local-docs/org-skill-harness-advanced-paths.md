@@ -442,8 +442,20 @@ Current implementation status:
 - **COMPLETED**: onboarding scan evidence recognizes dependency manifests such
   as `requirements.txt`, lockfiles, and package manifests, and generated skills
   can capture repo-specific dependency or quality-gate guidance.
-- Still deferred: cross-repo dependency inventory, upgrade planning, rollout
-  policy, campaign tracking, and regression reporting.
+- **COMPLETED**: artifact-only dependency campaign first slice. `harness
+  dependency campaign` accepts a campaign name and optional package filters,
+  resolves active non-external local repos, collects local dependency manifests
+  and lockfiles, represents malformed or missing evidence explicitly, classifies
+  conservative risk, suggests commands and eval ids only from known local
+  evidence, produces deterministic rollout ordering, and writes stable JSON and
+  Markdown artifacts. `.github/workflows/ci.yml` exposes a manual
+  `workflow_dispatch` job that uploads `.agent-harness/dependency-campaign/` as
+  `dependency-campaign-artifacts` and skips missing org packs, missing local
+  paths, or no dependency manifest evidence with reviewable artifacts.
+- Still deferred: dependency file edits, package-manager upgrades, registry
+  lookups, PR creation, comments, dashboards, auto-merge, merge-blocking policy,
+  campaign tracking beyond uploaded artifacts, and regression reporting beyond
+  suggested local checks/evals.
 
 What it adds:
 
